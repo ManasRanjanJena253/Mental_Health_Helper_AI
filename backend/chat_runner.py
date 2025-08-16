@@ -1,0 +1,153 @@
+from langchain_core.runnables import RunnablePassthrough
+from langchain_google_genai import ChatGoogleGenerativeAI
+from dotenv import load_dotenv
+from langchain.prompts import ChatPromptTemplate
+from langchain.memory import ConversationBufferMemory
+from langchain.globals import set_verbose
+from langchain_core.output_parsers import StrOutputParser
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_chroma import Chroma
+import chromadb
+import os
+
+load_dotenv()
+
+# Setting the verbose = True, to see the thinking of LLMs
+#set_verbose(True)
+
+class RunModel:
+    def __init__(self, api_key = os.getenv("GOOGLE_API_KEY"), model_name: str = "gemini-2.0-flash", temperature: int = 0.3):
+        """
+        Initializes the chat model running class.
+        :param api_key: The api key of the model being used.
+        :param model_name: The name of the model being used.
+        :param temperature: The temperature of the model (It controls the creativity of model, too high value will result in gibberish).
+        """
+        # Loading the llm
+        self.__api_key = api_key
+        self.memory = ConversationBufferMemory(return_messages = True)
+
+        # Creating chroma client.
+        self.chroma_client = chromadb.PersistentClient(path = "./chroma")
+        self.collection = self.chroma_client.get_or_create_collection(name = "Therapy Sessions")
+
+        # Turn id to track the message no. in an individual chat.
+        self.turn_id = 1
+
+        try:
+            self.llm = ChatGoogleGenerativeAI(model = model_name,
+                                         google_api_key = self.__api_key,
+                                         verbose = True,
+                                         temperature = temperature)
+        except Exception as e:
+            print(f"ERROR : {e}")
+
+    def initiate_run(self, user_prompt: str, session_id):
+        """
+        Used to initiate the first run to create the user memory.
+        :param user_prompt: The first prompt given by the user.
+        :param session_id: The session of the chat.
+        :return: The first output and the memory.
+        """
+
+        # Creating various prompts for chaining, to avoid the model from hallucinating and having better reasoning capabilities
+
+        prompt_1 = ChatPromptTemplate.from_messages([
+            ("system", "You are a psychologist and you need to identify the potential mental issues regarding the query made by the user.\
+            Provide the identified issues as a list and formulate the procedure by which the therapist should address these for resolving these.\
+            You are in INDIA where mental health is stigmatised and frowned upon,\
+            so make sure the procedures to be used by therapist to destigmatize and comfort the patient simultaneously."),
+            ("user", "{feeling}")
+        ])
+
+        prompt_2 = ChatPromptTemplate.from_messages([
+            ("system", "You are a therapist in INDIA and your task is to address the mental issues of your client by asking progressive questions and listening patiently.\
+                       You will be provided with the procedures provided by the doctor to be taken were learn from to resolve those issues. You also need to identify the \
+                       cultural or traditional stigma that might be the root cause of distress of the client. Don't address the doctor's remedies directly to the user,\
+                       and no need to tell the patient about any of your postural changes you do, just try to convey those kindness and tonality change through your language.\
+                       You need to WAIT for the users reply after asking a question, this is a LIVE session NOT a play.\
+                        Have EMPATHY i.e the act of keeping yourself in the patient's shoes to understand them better."),
+            ("user", "plz help !!!, the suggestions given by the doctor are : {remedies}"),
+        ])
+
+        # Creating the chain
+        # chain1 : Identifying the remedies.
+        chain_1 = (
+                {"feeling": RunnablePassthrough()}
+                | prompt_1
+                | self.llm
+                | StrOutputParser()
+        )
+
+        # chain2
+        chain_2 = (
+                {"remedies": chain_1}
+                | prompt_2
+                | self.llm
+                | StrOutputParser()
+        )
+
+        # Running the full pipeline
+        output = chain_2.invoke({"feeling": user_prompt})
+
+        # Checking if the model produced any output or not.
+        if not output:
+            raise ValueError("UNABLE TO GENERATE A REPLY !!! \n Plz Try Again Later.")
+
+        # Adding the session data into the chromadb
+        self.collection.add(
+            documents=[
+                f"User feeling: {user_prompt}\n"
+                f"Therapist final response: {output}"
+            ],
+            metadatas=[{"session_id": session_id, "turn_id": self.turn_id}],
+            ids=[f"{session_id}_{self.turn_id}"]
+        )
+
+        return output
+
+    def run(self, user_prompt, session_id):
+        """
+        The main function for running the whole LLMChain and using it via frontend for the user.
+        :param user_prompt: The prompt given by the user.
+        :param session_id: The unique id of a chat session.
+        :return: The final answer to the users question or chat discussion.
+        """
+        results = self.collection.query(
+            query_texts = [user_prompt],
+            n_results = 3,
+            where = {"session_id": session_id}
+        )
+
+        # Checking if there are any data about previous sessions of the user.
+        if not results:
+            self.initiate_run(user_prompt = user_prompt, session_id = session_id)
+
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", "You are a therapist in INDIA and your task is to address the mental issues of your client by asking progressive questions and listening patiently.\
+                       You have already had some conversation with the patient and this is a continuation.Your previous conversation : {context}. You also need to identify the \
+                       cultural or traditional stigma that might be the root cause of distress of the client. Don't address the doctor's remedies directly to the user,\
+                       and no need to tell the patient about any of your postural changes you do, just try to convey those kindness and tonality change through your language.\
+                       You need to WAIT for the users reply after asking a question, this is a LIVE session NOT a play.\
+                        Have EMPATHY i.e the act of keeping yourself in the patient's shoes to understand them and their situation better."),
+            ("user", "{response}"),
+        ])
+
+        context_str = "\n".join(results["documents"][0])
+
+        chain = ({"response": user_prompt, "context": context_str}
+                 | prompt
+                 | self.llm
+                 | StrOutputParser())
+
+        output = chain.invoke(input = user_prompt)
+
+        # Checking if the model produced any output or not.
+        if not output:
+            raise ValueError("UNABLE TO GENERATE A REPLY !!! \n Plz Try Again Later.")
+
+        return output
+
+
+obj = RunModel()
+print(obj.initiate_run(user_prompt = "I am feeling really depressed.", session_id = "user1"))
