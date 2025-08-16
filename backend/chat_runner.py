@@ -25,11 +25,10 @@ class RunModel:
         """
         # Loading the llm
         self.__api_key = api_key
-        self.memory = ConversationBufferMemory(return_messages = True)
 
         # Creating chroma client.
         self.chroma_client = chromadb.PersistentClient(path = "./chroma")
-        self.collection = self.chroma_client.get_or_create_collection(name = "Therapy Sessions")
+        self.collection = self.chroma_client.get_or_create_collection(name = "Therapy_Sessions")
 
         # Turn id to track the message no. in an individual chat.
         self.turn_id = 1
@@ -42,11 +41,12 @@ class RunModel:
         except Exception as e:
             print(f"ERROR : {e}")
 
-    def initiate_run(self, user_prompt: str, session_id):
+    def initiate_run(self, user_prompt: str, session_id: str, user_id: str):
         """
         Used to initiate the first run to create the user memory.
         :param user_prompt: The first prompt given by the user.
         :param session_id: The session of the chat.
+        :param user_id: The unique id of the user.
         :return: The first output and the memory.
         """
 
@@ -100,28 +100,37 @@ class RunModel:
                 f"User feeling: {user_prompt}\n"
                 f"Therapist final response: {output}"
             ],
-            metadatas=[{"session_id": session_id, "turn_id": self.turn_id}],
+            metadatas=[{"session_id": session_id, "turn_id": self.turn_id, "user_id": user_id}],
             ids=[f"{session_id}_{self.turn_id}"]
         )
 
+        self.turn_id += 1
+
         return output
 
-    def run(self, user_prompt, session_id):
+    def run(self, user_prompt, session_id: str, user_id: str):
         """
         The main function for running the whole LLMChain and using it via frontend for the user.
         :param user_prompt: The prompt given by the user.
         :param session_id: The unique id of a chat session.
+        :param user_id: The unique id of the user.
         :return: The final answer to the users question or chat discussion.
         """
         results = self.collection.query(
             query_texts = [user_prompt],
             n_results = 3,
-            where = {"session_id": session_id}
+            where = {"session_id": {"$eq": session_id}}
         )
 
+        # filtering by user_id
+        filtered_docs = [
+            (doc, meta) for doc, meta in zip(results["documents"][0], results["metadatas"][0])
+            if meta.get("user_id") == user_id
+        ]
+
         # Checking if there are any data about previous sessions of the user.
-        if not results:
-            self.initiate_run(user_prompt = user_prompt, session_id = session_id)
+        if not filtered_docs:
+            self.initiate_run(user_prompt = user_prompt, session_id = session_id, user_id = user_id)
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", "You are a therapist in INDIA and your task is to address the mental issues of your client by asking progressive questions and listening patiently.\
@@ -135,19 +144,36 @@ class RunModel:
 
         context_str = "\n".join(results["documents"][0])
 
-        chain = ({"response": user_prompt, "context": context_str}
+        chain = ({"response": RunnablePassthrough(), "context": RunnablePassthrough()}
                  | prompt
                  | self.llm
                  | StrOutputParser())
 
-        output = chain.invoke(input = user_prompt)
+        try:
+            output = chain.invoke({
+                    "response": user_prompt,
+                    "context": context_str
+                })
+
+        except Exception as e:
+            return f"Error : {e}"
 
         # Checking if the model produced any output or not.
         if not output:
             raise ValueError("UNABLE TO GENERATE A REPLY !!! \n Plz Try Again Later.")
 
+        self.collection.add(
+            documents=[
+                f"User feeling: {user_prompt}\n"
+                f"Therapist final response: {output}"
+            ],
+            metadatas=[{"session_id": session_id, "turn_id": self.turn_id, "user_id": user_id}],
+            ids=[f"{session_id}_{self.turn_id}"]
+        )
+
+        self.turn_id += 1
+
         return output
 
-
-obj = RunModel()
-print(obj.initiate_run(user_prompt = "I am feeling really depressed.", session_id = "user1"))
+#obj = RunModel()
+#print(obj.run(user_prompt = "I am feeling really guilty", session_id = "12hj", user_id = "manas"))
