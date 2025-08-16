@@ -1,3 +1,4 @@
+import uvicorn
 from fastapi import FastAPI
 from fastapi.exceptions import HTTPException
 import redis
@@ -8,7 +9,7 @@ app = FastAPI()
 
 model_runner = RunModel()
 
-client_redis = redis.Redis(host = "localhost", db = 0, port = 1000)
+client_redis = redis.Redis(host = "localhost", db = 0, port = 6379)
 
 mock_user_db = {"manas": "user123", "daksh": "genai", "aman": "frontend"}
 
@@ -27,7 +28,7 @@ def login(username: str, password: str):
         raise HTTPException(status_code = 401, detail = "Invalid credentials")
 
     session_token = str(uuid.uuid4())
-    client_redis.set(session_token, username)   # permanent session token tied to the user.
+    client_redis.setex(name = session_token, value = username, time = 43200)   # session token valid for only 12 hours.
     return {"token": session_token}
 
 @app.get("/sessions")
@@ -81,15 +82,13 @@ def chat(user_prompt: str, session_id: str, token: str):
 
     return {"response": response}
 
-@app.delete("delete/{session_id}")
-def delete_chat(session_id: str, token: str):
+@app.delete("/delete/{session_id}")
+def delete_chat(session_id: str):
     """
     API endpoint to delete a particular chat history.
     :param session_id: The chat id that the user want to delete.
-    :param token: The unique token generated for the user.
     :return: Confirmation message.
     """
-    user_id = client_redis.get(token).decode()
 
     try:
         model_runner.collection.delete(where = {"session_id": {"$eq": session_id}})
@@ -97,3 +96,6 @@ def delete_chat(session_id: str, token: str):
 
     except Exception as e:
         raise HTTPException(status_code = 500, detail = str(e))
+
+if __name__ == "__main__":
+    uvicorn.run(port = 8001, app = app)
