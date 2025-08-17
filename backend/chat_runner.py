@@ -29,7 +29,7 @@ class RunModel:
 
         # Creating chroma client.
         self.chroma_client = chromadb.PersistentClient(path = "./chroma")
-        self.collection = self.chroma_client.get_or_create_collection(name = db_name)
+        self.collection = self.chroma_client.get_or_create_collection(name = db_name.replace(" ", "").lower())  # Handling the spaces in names.
 
         try:
             self.llm = ChatGoogleGenerativeAI(model = model_name,
@@ -64,35 +64,8 @@ class RunModel:
                        cultural or traditional stigma that might be the root cause of distress of the client. Don't address the doctor's remedies directly to the user,\
                        and no need to tell the patient about any of your postural changes you do, just try to convey those kindness and tonality change through your language.\
                        You need to WAIT for the users reply after asking a question, this is a LIVE session NOT a play.\
-                                              You need to WAIT for the users reply after asking a question, this is a LIVE session NOT a play.\n""
-                       "\n\n \
-                       These are the qualities you need to showcase as an therapist : \n
-                        Step 1 --> Validating the patient’s feelings without judgment.\n
-                        Step 2 --> Identifying cognitive distortions and gently educating the patient.\n
-                        Step 3 --> Providing practical strategies for challenging negative thinking.\n
-                        Step 4 --> Encouraging self-awareness and insight into underlying beliefs.\n
-                        Step 5 --> Setting a collaborative, supportive tone for ongoing progress.\n
-                       You shouldn't ask only questions you have to also try to comfort the patient on their given answers and make them feel safe. For example : \n
-                         Patient: I feel like I’m failing at everything.\n
-                        
-                        Therapist: That’s tough. Can you give one example? (Validation & Active Listening)\n
-                        
-                        Patient: I messed up a presentation and skipped my workout.\n
-                        
-                        Therapist: What about something you did well recently? (Cognitive Reframing)\n
-                        
-                        Patient: I helped a colleague solve a problem yesterday.\n
-                        
-                        Therapist: Good! Your mind is focusing on negatives—this is all-or-nothing thinking. (Psychoeducation)\n
-                        
-                        Patient: It feels real, though.\n
-                        
-                        Therapist: When it arises, try: “I failed here, but I succeeded there.” (Behavioral / Cognitive Strategy)\n
-                        
-                        Patient: I can try that.\n
-                        
-                        Therapist: Also, consider if your expectations are realistic. (Guided Discovery / Goal Setting)\n
-                        Anything asked out of the scope of a therapist you should strictly deny it and say NO. 
+                        You need to WAIT for the users reply after asking a question, this is a LIVE session NOT a play.\n""
+                        Anything asked out of the scope of a therapist you should strictly deny it. 
                         Try to keep your responses more interactive and longer."""),
             ("user", "plz help !!!, the suggestions given by the doctor are : {remedies}"),
         ])
@@ -157,20 +130,18 @@ class RunModel:
         if not filtered_docs:
             self.initiate_run(user_prompt = user_prompt, session_id = session_id, user_name = user_name)
 
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are a therapist in INDIA and your task is to address the mental issues of your client by asking progressive questions and listening patiently.\
-                       You have already had some conversation with the patient and this is a continuation.Your previous conversation : {context}. You also need to identify the \
-                       cultural or traditional stigma that might be the root cause of distress of the client. Don't address the doctor's remedies directly to the user,\
-                       and no need to tell the patient about any of your postural changes you do, just try to convey those kindness and tonality change through your language.\
-                       You need to WAIT for the users reply after asking a question, this is a LIVE session NOT a play.\n""
-                       "\n\n \
-                       These are the qualities you need to showcase as an therapist : \n
+        assistant_prompt = ChatPromptTemplate.from_messages([
+            ("system", """ You are an assistant responsible for keeping in check that the ai therapist is keeping him on the right track in helping the issue of the patient.\n
+                        TO do this you need to strictly and clearly tell the therapist what his next steps will be, based on the info you will be provided on the past interaction 
+                        with the patient. Make sure that the issues like societal and traditional bounds are addressed correctly as you are in INDIA. In every step try to destigmatize the 
+                        traditional orthodox beliefs related to their culture and may be the cause of distress in patients.                  
+                        These are the qualities you need to enforce on the therapist AI: \n
                         Step 1 --> Validating the patient’s feelings without judgment.\n
                         Step 2 --> Identifying cognitive distortions and gently educating the patient.\n
                         Step 3 --> Providing practical strategies for challenging negative thinking.\n
                         Step 4 --> Encouraging self-awareness and insight into underlying beliefs.\n
                         Step 5 --> Setting a collaborative, supportive tone for ongoing progress.\n
-                       You shouldn't ask only questions you have to also try to comfort the patient on their given answers and make them feel safe. For example : \n
+                       Therapist shouldn't ask only questions it have to also try to comfort the patient on their given answers and make them feel safe. For example : \n
                          Patient: I feel like I’m failing at everything.\n
                         
                         Therapist: That’s tough. Can you give one example? (Validation & Active Listening)\n
@@ -192,20 +163,40 @@ class RunModel:
                         Therapist: Also, consider if your expectations are realistic. (Guided Discovery / Goal Setting)\n
                         Anything asked out of the scope of a therapist you should strictly deny it and say NO. 
                         Try to keep your responses more interactive and longer."""),
+            ("user", "Previous_Context : {context}")
+        ])
+        main_prompt = ChatPromptTemplate.from_messages([
+            ("system", """You are a therapist in INDIA and your task is to address the mental issues of your client by asking progressive questions and listening patiently.\
+                       You have already had some conversation with the patient and this is a continuation.Your previous conversation : {context}. You also need to identify the \
+                       cultural or traditional stigma that might be the root cause of distress of the client. Don't address the doctor's remedies directly to the user,\
+                       and no need to tell the patient about any of your postural changes you do, just try to convey those kindness and tonality change through your language.\
+                       You need to WAIT for the users reply after asking a question, this is a LIVE session NOT a play.\n""
+                       "\n\n \
+                        Anything asked out of the scope of a therapist you should strictly deny it. 
+                        Try to keep your responses more interactive and longer.
+                        You will be constantly given instructions on how to handle the conversation and therapy session. You need to follow those instructions STRICTLY. """),
             ("user", "{response}"),
         ])
 
-        context_str = "\n".join(results["documents"][0])
+        context_str = "\n".join([doc for doc, _ in filtered_docs])
 
-        chain = ({"response": RunnablePassthrough(), "context": RunnablePassthrough()}
-                 | prompt
+        assist_chain = ({"context": RunnablePassthrough()}
+                    | assistant_prompt
+                    | self.llm
+                    | StrOutputParser())
+
+        instructions = assist_chain.invoke({"context": context_str})
+
+        main_chain = ({"response": RunnablePassthrough(), "context": RunnablePassthrough(), "instructions": RunnablePassthrough()}
+                 | main_prompt
                  | self.llm
                  | StrOutputParser())
 
         try:
-            output = chain.invoke({
+            output = main_chain.invoke({
                     "response": user_prompt,
-                    "context": context_str
+                    "context": context_str,
+                    "instructions": instructions
                 })
 
         except Exception as e:

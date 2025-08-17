@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from backend.chat_runner import RunModel
 from mongo_schema import db
 from passlib.hash import bcrypt
+from fastapi.middleware.cors import CORSMiddleware
 
 ########################################################################################################################################################################
 # How bcrypt Works (Step by Step)
@@ -38,7 +39,13 @@ app = FastAPI()
 
 collection = db["user_data"]
 
-mock_user_db = {"manas": "user123", "daksh": "genai", "aman": "frontend"}
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],          # list of origins; use ["*"] to allow all
+    allow_credentials=True,
+    allow_methods=["*"],            # allow all HTTP methods
+    allow_headers=["*"],            # allow all headers
+)
 
 def create_chat_name(user_prompt: str):
     """
@@ -66,12 +73,13 @@ def authenticate_user(user_name: str, password: str):
 
 @app.post("/sign_in")
 def sign_in(user_name: str, password: str):
-    data = collection.find({"user_name": user_name})
+    data = collection.find_one({"user_name": user_name})
     if data:
         raise HTTPException(status_code = 409, detail = "User with this user_name already exists.")
 
     hashed_password = bcrypt.hash(password)   # Using hashed password for extra safety.
     collection.insert_one({"user_name": user_name, "password": hashed_password})
+    return {"Confirmation": "Signed In Successfully. Proceed to Login"}
 
 @app.post("/login")
 def login(user_name: str, password: str):
@@ -109,12 +117,12 @@ def new_session(user_name: str):
     :param user_name: The unique user_name of the user.
     :return: The new session id.
     """
-    session_id = str(uuid.uuid4())
-    try:
-        collection.update_one({"user_name": user_name}, {"$push": { "session_ids": session_id}})
-    except Exception as e:
-        return HTTPException(status_code = 500, detail = "Unable to create new_session. \n Try again Later.")
-    return {"session_id": session_id}
+    result = collection.find_one({"user_name": user_name})
+    if result:
+        session_id = str(uuid.uuid4())
+        return {"session_id": session_id}
+    else:
+        raise HTTPException(status_code = 404, detail = "User not found.")
 
 @app.post("/{user_name}/{session_id}/chat")
 def chat(user_prompt: str, session_id: str, user_name: str):
@@ -126,10 +134,13 @@ def chat(user_prompt: str, session_id: str, user_name: str):
     :return: The response given by the llm.
     """
     model_runner = RunModel(db_name=f"VectorDB_{user_name}")
-    chat_name = create_chat_name(user_prompt = user_prompt)
 
     try:
-        collection.update_one({"user_name": user_name}, {"$push": {"chat_names": chat_name}})
+        session_id_check = collection.find_one({"user_name": user_name, "session_ids": session_id})
+        if not session_id_check:  # If the session id is new.
+            chat_name = create_chat_name(user_prompt=user_prompt)
+            collection.update_one({"user_name": user_name}, {"$push": {"chat_names": chat_name, "session_ids": session_id}})
+
         response = model_runner.run(user_prompt = user_prompt,
                          session_id = session_id,
                          user_name = user_name)
