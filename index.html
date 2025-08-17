@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Yare Yare Dataset – Calm GenAI Chat</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=Poppins:wght@400;600;700&family=Righteous&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind = window.tailwind || {};
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            peach: '#ffe9dc',
+            blush: '#f8c8dc',
+            pastelorange: '#ffd8b1',
+            sage: '#a8c3a1',
+            lavender: '#c9b6e4',
+            teal: '#8fd3d6',
+            ink: '#333333'
+          },
+          fontFamily: {
+            nunito: ['Nunito', 'ui-sans-serif', 'system-ui', 'Arial'],
+            poppins: ['Poppins', 'ui-sans-serif', 'system-ui', 'Arial'],
+            righteous: ['Righteous', 'ui-sans-serif', 'system-ui', 'Arial']
+          },
+          boxShadow: {
+            soft: '0 10px 30px rgba(0,0,0,0.08)'
+          },
+          borderRadius: {
+            '3xl': '1.5rem'
+          },
+          keyframes: {
+            fadeIn: {
+              '0%': { opacity: '0', transform: 'translateY(-8px)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' }
+            },
+            slideUp: {
+              '0%': { opacity: '0', transform: 'translateY(12px)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' }
+            },
+            shake: {
+              '0%, 100%': { transform: 'translateX(0)' },
+              '20%': { transform: 'translateX(-4px)' },
+              '40%': { transform: 'translateX(4px)' },
+              '60%': { transform: 'translateX(-3px)' },
+              '80%': { transform: 'translateX(3px)' }
+            },
+            bounceSubtle: {
+              '0%, 100%': { transform: 'translateY(0)' },
+              '50%': { transform: 'translateY(-6px)' }
+            },
+            glowPulse: {
+              '0%': { boxShadow: '0 0 0 0 rgba(143,211,214,0.35)' },
+              '70%': { boxShadow: '0 0 0 12px rgba(143,211,214,0)' },
+              '100%': { boxShadow: '0 0 0 0 rgba(143,211,214,0)' }
+            }
+          },
+          animation: {
+            'fade-in': 'fadeIn 800ms ease-out forwards',
+            'slide-up': 'slideUp 300ms ease-out forwards',
+            'shake': 'shake 480ms ease',
+            'bounce-subtle': 'bounceSubtle 2.4s ease-in-out infinite',
+            'glow-pulse': 'glowPulse 2.4s ease-out infinite'
+          }
+        }
+      }
+    }
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-peach text-ink font-nunito antialiased selection:bg-lavender/40 selection:text-ink">
+  <header class="bg-gradient-to-r from-peach to-pastelorange shadow-soft border-b border-white/70 animate-fade-in">
+    <div class="max-w-3xl mx-auto px-6 py-6 flex items-center justify-between">
+      <div>
+        <h1 class="font-righteous text-2xl md:text-3xl bg-gradient-to-r from-lavender via-sage to-teal bg-clip-text text-transparent drop-shadow-sm">Yare Yare Dataset</h1>
+        <p class="text-sm md:text-base text-ink/70 mt-1">A calm space to talk, reflect, and grow</p>
+      </div>
+      <div id="userBadge" class="hidden md:flex items-center gap-2 bg-white/50 border border-white/70 rounded-full px-3 py-1 shadow-soft">
+        <div class="w-2 h-2 rounded-full bg-sage"></div>
+        <span class="text-sm font-semibold text-ink/80" id="userNameBadge"></span>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-3xl mx-auto p-6 md:p-8 space-y-6">
+    <!-- Login Section -->
+    <section id="loginSection" class="bg-white/70 backdrop-blur-sm rounded-3xl shadow-soft border border-white/60 p-6 md:p-8 animate-fade-in">
+      <div class="flex items-center gap-3 mb-6">
+        <div class="w-10 h-10 rounded-2xl bg-pastelorange/60 flex items-center justify-center shadow-soft">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-ink/80">
+            <path d="M12 12.75c2.347 0 4.5.777 6.222 2.084a.75.75 0 01.278.586v1.08a.75.75 0 01-.75.75H6.25a.75.75 0 01-.75-.75v-1.08c0-.232.106-.452.278-.586A10.451 10.451 0 0112 12.75zM12 3a4.5 4.5 0 110 9 4.5 4.5 0 010-9z" />
+          </svg>
+        </div>
+        <h2 class="text-xl md:text-2xl font-semibold text-ink">Welcome</h2>
+      </div>
+      <div class="space-y-4">
+        <div>
+          <label for="usernameInput" class="block text-sm text-ink/80 mb-1">Username</label>
+          <input id="usernameInput" type="text" class="w-full rounded-2xl bg-white border border-pastelorange/50 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] focus:outline-none focus:ring-2 focus:ring-teal/60 focus:border-teal placeholder-ink/40" placeholder="your_name" />
+        </div>
+        <div>
+          <label for="passwordInput" class="block text-sm text-ink/80 mb-1">Password</label>
+          <input id="passwordInput" type="password" class="w-full rounded-2xl bg-white border border-pastelorange/50 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] focus:outline-none focus:ring-2 focus:ring-teal/60 focus:border-teal placeholder-ink/40" placeholder="••••••••" />
+        </div>
+        <div class="flex flex-col sm:flex-row gap-3 pt-2">
+          <button id="loginBtn" class="flex-1 bg-pastelorange text-ink font-semibold px-4 py-3 rounded-2xl shadow-soft hover:scale-[1.03] hover:brightness-105 active:scale-[0.99] transition-transform">Login</button>
+          <button id="signupBtn" class="flex-1 bg-blush text-ink font-semibold px-4 py-3 rounded-2xl shadow-soft hover:scale-[1.03] hover:brightness-105 active:scale-[0.99] transition-transform">Sign Up</button>
+        </div>
+        <p id="loginMessage" class="text-sm text-ink/70 min-h-[1.25rem]"></p>
+      </div>
+    </section>
+
+    <!-- Dashboard Section -->
+    <section id="dashboardSection" class="hidden bg-white/70 backdrop-blur-sm rounded-3xl shadow-soft border border-white/60 p-6 md:p-8">
+      <div class="flex items-center justify-between gap-3 mb-6">
+        <h2 class="text-xl md:text-2xl font-semibold text-ink">Your Chat Sessions</h2>
+        <button id="logoutBtn" class="text-ink/70 hover:text-ink hover:underline text-sm">Log out</button>
+      </div>
+      <div id="sessionsList" class="grid gap-4"></div>
+      <div id="emptySessions" class="hidden text-ink/70 text-center py-8">No sessions yet. Tap the button to start a new one.</div>
+      <button id="newSessionBtn" title="+ New Session" class="fixed bottom-6 right-6 z-20 bg-pastelorange text-ink font-semibold px-5 py-4 rounded-full shadow-soft hover:scale-[1.07] hover:brightness-105 active:scale-[0.98] transition-transform animate-bounce-subtle">+ New Session</button>
+    </section>
+
+    <!-- Chat Section -->
+    <section id="chatSection" class="hidden bg-white/70 backdrop-blur-sm rounded-3xl shadow-soft border border-white/60 p-0 overflow-hidden">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-white/70 bg-peach/60">
+        <div>
+          <h3 id="chatTitle" class="text-lg font-semibold text-ink">New Session</h3>
+          <p class="text-xs text-ink/60">Feel free to share what's on your mind</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="backToDashboardBtn" class="text-sm text-ink/70 bg-white/70 border border-white/80 rounded-full px-3 py-1 shadow-soft hover:scale-[1.03] hover:brightness-105">Back</button>
+        </div>
+      </div>
+      <div id="messagesContainer" class="h-[60vh] sm:h-[65vh] overflow-y-auto px-4 py-6 space-y-3 bg-gradient-to-b from-peach/40 to-white/60"></div>
+      <div class="sticky bottom-0 w-full bg-white/80 backdrop-blur-sm border-t border-white/70 px-4 py-3">
+        <div class="flex items-end gap-2">
+          <textarea id="messageInput" rows="1" placeholder="Type a message..." class="flex-1 resize-none rounded-2xl border border-peach/70 bg-white px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] focus:outline-none focus:ring-2 focus:ring-teal/60"></textarea>
+          <button id="sendBtn" class="bg-teal text-ink font-semibold px-5 h-[44px] rounded-2xl shadow-soft hover:scale-[1.05] hover:brightness-110 hover:animate-glow-pulse active:scale-[0.98] transition-transform">Send</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      const BASE_URL = 'http://127.0.0.1:8001';
+
+      const loginSection = document.getElementById('loginSection');
+      const dashboardSection = document.getElementById('dashboardSection');
+      const chatSection = document.getElementById('chatSection');
+
+      const usernameInput = document.getElementById('usernameInput');
+      const passwordInput = document.getElementById('passwordInput');
+      const loginBtn = document.getElementById('loginBtn');
+      const signupBtn = document.getElementById('signupBtn');
+      const loginMessage = document.getElementById('loginMessage');
+
+      const sessionsList = document.getElementById('sessionsList');
+      const emptySessions = document.getElementById('emptySessions');
+      const newSessionBtn = document.getElementById('newSessionBtn');
+
+      const backToDashboardBtn = document.getElementById('backToDashboardBtn');
+      const chatTitle = document.getElementById('chatTitle');
+      const messagesContainer = document.getElementById('messagesContainer');
+      const messageInput = document.getElementById('messageInput');
+      const sendBtn = document.getElementById('sendBtn');
+
+      const userBadge = document.getElementById('userBadge');
+      const userNameBadge = document.getElementById('userNameBadge');
+      const logoutBtn = document.getElementById('logoutBtn');
+
+      const appState = {
+        userName: '',
+        sessions: [],
+        chatNames: [],
+        currentSessionId: ''
+      };
+
+      function switchSection(section) {
+        for (const el of [loginSection, dashboardSection, chatSection]) {
+          el.classList.add('hidden');
+        }
+        const target = section === 'login' ? loginSection : section === 'dashboard' ? dashboardSection : chatSection;
+        target.classList.remove('hidden');
+        target.classList.add('animate-fade-in');
+        setTimeout(() => target.classList.remove('animate-fade-in'), 900);
+      }
+
+      function applyShake(element) {
+        element.classList.add('animate-shake');
+        setTimeout(() => element.classList.remove('animate-shake'), 500);
+      }
+
+      function saveUserName(name) {
+        appState.userName = name;
+        localStorage.setItem('yy_user', name);
+        userNameBadge.textContent = '@' + name;
+        userBadge.classList.remove('hidden');
+      }
+
+      function clearUser() {
+        localStorage.removeItem('yy_user');
+        appState.userName = '';
+        appState.sessions = [];
+        appState.chatNames = [];
+        appState.currentSessionId = '';
+        userBadge.classList.add('hidden');
+      }
+
+      async function handleLogin() {
+        const u = usernameInput.value.trim();
+        const p = passwordInput.value;
+        loginMessage.textContent = '';
+        if (!u || !p) {
+          loginMessage.textContent = 'Please enter both username and password.';
+          applyShake(loginSection);
+          return;
+        }
+        loginBtn.disabled = true;
+        loginBtn.classList.add('opacity-60');
+        try {
+          const res = await fetch(`${BASE_URL}/login?user_name=${encodeURIComponent(u)}&password=${encodeURIComponent(p)}`, {
+            method: 'POST'
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || 'Invalid credentials.');
+          }
+          saveUserName(u);
+          usernameInput.value = '';
+          passwordInput.value = '';
+          await loadSessions();
+          switchSection('dashboard');
+        } catch (e) {
+          loginMessage.textContent = e.message || 'Login failed.';
+          applyShake(loginSection);
+        } finally {
+          loginBtn.disabled = false;
+          loginBtn.classList.remove('opacity-60');
+        }
+      }
+
+      async function handleSignUp() {
+        const u = usernameInput.value.trim();
+        const p = passwordInput.value;
+        loginMessage.textContent = '';
+        if (!u || !p) {
+          loginMessage.textContent = 'Please enter a username and password to sign up.';
+          applyShake(loginSection);
+          return;
+        }
+        signupBtn.disabled = true;
+        signupBtn.classList.add('opacity-60');
+        try {
+          const res = await fetch(`${BASE_URL}/sign_in?user_name=${encodeURIComponent(u)}&password=${encodeURIComponent(p)}`, {
+            method: 'POST'
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || 'Sign up failed.');
+          }
+          loginMessage.textContent = 'Account created. Logging you in...';
+          await handleLogin();
+        } catch (e) {
+          loginMessage.textContent = e.message || 'Sign up failed.';
+          applyShake(loginSection);
+        } finally {
+          signupBtn.disabled = false;
+          signupBtn.classList.remove('opacity-60');
+        }
+      }
+
+      async function loadSessions() {
+        if (!appState.userName) return;
+        sessionsList.innerHTML = '';
+        emptySessions.classList.add('hidden');
+        try {
+          const res = await fetch(`${BASE_URL}/${encodeURIComponent(appState.userName)}/all_sessions`, { method: 'GET' });
+          if (!res.ok) throw new Error('Could not load sessions.');
+          const data = await res.json();
+          const ids = Array.isArray(data.session_ids) ? data.session_ids : [];
+          const names = Array.isArray(data.chat_names) ? data.chat_names : [];
+          appState.sessions = ids;
+          appState.chatNames = names;
+          renderSessions();
+        } catch (e) {
+          appState.sessions = [];
+          appState.chatNames = [];
+          renderSessions();
+        }
+      }
+
+      function renderSessions() {
+        sessionsList.innerHTML = '';
+        if (!appState.sessions || appState.sessions.length === 0) {
+          emptySessions.classList.remove('hidden');
+          return;
+        }
+        emptySessions.classList.add('hidden');
+        appState.sessions.forEach((sid, idx) => {
+          const name = (appState.chatNames && appState.chatNames[idx]) || 'Untitled Chat';
+          const isActive = sid === appState.currentSessionId;
+          const card = document.createElement('div');
+          card.className = 'rounded-2xl bg-white/70 border border-white/70 p-4 shadow-soft animate-slide-up';
+
+          const top = document.createElement('div');
+          top.className = 'flex items-start justify-between gap-3';
+
+          const titleWrap = document.createElement('div');
+          const title = document.createElement('h3');
+          title.className = 'text-lg font-semibold text-ink';
+          title.textContent = name;
+          const small = document.createElement('p');
+          small.className = 'text-xs text-ink/50';
+          small.textContent = `#${sid.slice(0, 8)}`;
+          titleWrap.appendChild(title);
+          titleWrap.appendChild(small);
+
+          const badge = document.createElement('span');
+          badge.className = `text-xs rounded-full px-3 py-1 ${isActive ? 'bg-sage/70 text-ink' : 'bg-lavender/60 text-ink'} border border-white/80 shadow-soft`;
+          badge.textContent = isActive ? 'active' : 'archived';
+
+          top.appendChild(titleWrap);
+          top.appendChild(badge);
+
+          const actions = document.createElement('div');
+          actions.className = 'mt-3 flex items-center gap-2';
+
+          const contBtn = document.createElement('button');
+          contBtn.className = 'bg-pastelorange text-ink text-sm font-semibold px-3 py-2 rounded-xl shadow-soft hover:scale-[1.03] hover:brightness-105 transition-transform';
+          contBtn.textContent = 'Continue Chat';
+          contBtn.onclick = () => handleContinue(sid, name);
+
+          const delBtn = document.createElement('button');
+          delBtn.className = 'bg-blush text-ink text-sm font-semibold px-3 py-2 rounded-xl shadow-soft hover:scale-[1.03] hover:brightness-105 transition-transform';
+          delBtn.textContent = 'Delete';
+          delBtn.onclick = () => handleDelete(sid);
+
+          actions.appendChild(contBtn);
+          actions.appendChild(delBtn);
+
+          card.appendChild(top);
+          card.appendChild(actions);
+          sessionsList.appendChild(card);
+        });
+      }
+
+      async function handleStartNewSession() {
+        if (!appState.userName) return;
+        newSessionBtn.disabled = true;
+        newSessionBtn.classList.add('opacity-60');
+        try {
+          const res = await fetch(`${BASE_URL}/${encodeURIComponent(appState.userName)}/new_session`, { method: 'POST' });
+          if (!res.ok) throw new Error('Failed to create a session.');
+          const data = await res.json();
+          const sid = data.session_id;
+          appState.currentSessionId = sid;
+          chatTitle.textContent = 'New Session';
+          messagesContainer.innerHTML = '';
+          switchSection('chat');
+        } catch (e) {
+          alert(e.message || 'Could not start a new session.');
+        } finally {
+          newSessionBtn.disabled = false;
+          newSessionBtn.classList.remove('opacity-60');
+        }
+      }
+
+      function handleContinue(sessionId, chatName) {
+        appState.currentSessionId = sessionId;
+        chatTitle.textContent = chatName || 'Chat';
+        messagesContainer.innerHTML = '';
+        switchSection('chat');
+      }
+
+      async function handleDelete(sessionId) {
+        if (!appState.userName) return;
+        const ok = confirm('Delete this chat? This cannot be undone.');
+        if (!ok) return;
+        try {
+          const res = await fetch(`${BASE_URL}/${encodeURIComponent(appState.userName)}/${encodeURIComponent(sessionId)}/delete`, { method: 'DELETE' });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || 'Failed to delete.');
+          }
+          if (appState.currentSessionId === sessionId) {
+            appState.currentSessionId = '';
+            switchSection('dashboard');
+          }
+          await loadSessions();
+        } catch (e) {
+          alert(e.message || 'Delete failed.');
+        }
+      }
+
+      function addMessageBubble(role, text) {
+        const line = document.createElement('div');
+        line.className = `w-full flex ${role === 'user' ? 'justify-end' : 'justify-start'} animate-slide-up`;
+
+        const bubble = document.createElement('div');
+        bubble.className = `${role === 'user' ? 'bg-pastelorange text-white' : 'bg-blush text-ink'} max-w-[85%] md:max-w-[75%] px-4 py-3 rounded-2xl shadow-soft`;
+        bubble.style.wordBreak = 'break-word';
+        bubble.textContent = text;
+
+        line.appendChild(bubble);
+        messagesContainer.appendChild(line);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+        return bubble;
+      }
+
+      async function sendMessage() {
+        const text = messageInput.value.trim();
+        if (!text) return;
+        if (!appState.userName) {
+          alert('Please log in first.');
+          return;
+        }
+        if (!appState.currentSessionId) {
+          await handleStartNewSession();
+        }
+        const sessionId = appState.currentSessionId;
+        messageInput.value = '';
+        messageInput.style.height = 'auto';
+
+        addMessageBubble('user', text);
+        const pending = addMessageBubble('ai', '…');
+
+        sendBtn.disabled = true;
+        sendBtn.classList.add('opacity-60');
+
+        try {
+          const url = `${BASE_URL}/${encodeURIComponent(appState.userName)}/${encodeURIComponent(sessionId)}/chat?user_prompt=${encodeURIComponent(text)}&session_id=${encodeURIComponent(sessionId)}&user_name=${encodeURIComponent(appState.userName)}`;
+          const res = await fetch(url, { method: 'POST' });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || 'Failed to get response.');
+          }
+          const data = await res.json();
+          pending.textContent = data.response ?? '(no response)';
+          await loadSessions();
+        } catch (e) {
+          pending.textContent = 'Sorry, something went wrong. Please try again.';
+        } finally {
+          sendBtn.disabled = false;
+          sendBtn.classList.remove('opacity-60');
+        }
+      }
+
+      function autoResizeTextarea() {
+        messageInput.style.height = 'auto';
+        messageInput.style.height = Math.min(messageInput.scrollHeight, 180) + 'px';
+      }
+
+      // Event bindings
+      loginBtn.addEventListener('click', handleLogin);
+      signupBtn.addEventListener('click', handleSignUp);
+      newSessionBtn.addEventListener('click', handleStartNewSession);
+      backToDashboardBtn.addEventListener('click', () => {
+        switchSection('dashboard');
+      });
+      sendBtn.addEventListener('click', sendMessage);
+      messageInput.addEventListener('input', autoResizeTextarea);
+      messageInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          sendMessage();
+        }
+      });
+      logoutBtn.addEventListener('click', () => {
+        clearUser();
+        switchSection('login');
+      });
+
+      // Restore last user if present
+      const storedUser = localStorage.getItem('yy_user');
+      if (storedUser) {
+        saveUserName(storedUser);
+        loadSessions().then(() => switchSection('dashboard'));
+      } else {
+        switchSection('login');
+      }
+    })();
+  </script>
+</body>
+</html>
