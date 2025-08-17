@@ -16,22 +16,20 @@ load_dotenv()
 #set_verbose(True)
 
 class RunModel:
-    def __init__(self, api_key = os.getenv("GOOGLE_API_KEY"), model_name: str = "gemini-2.0-flash", temperature: int = 0.3):
+    def __init__(self, db_name: str, api_key = os.getenv("GOOGLE_API_KEY"), model_name: str = "gemini-2.0-flash", temperature: int = 0.3):
         """
         Initializes the chat model running class.
         :param api_key: The api key of the model being used.
         :param model_name: The name of the model being used.
         :param temperature: The temperature of the model (It controls the creativity of model, too high value will result in gibberish).
+        :param db_name: The name of the chromadb collection based on the user.
         """
         # Loading the llm
         self.__api_key = api_key
 
         # Creating chroma client.
         self.chroma_client = chromadb.PersistentClient(path = "./chroma")
-        self.collection = self.chroma_client.get_or_create_collection(name = "Therapy_Sessions")
-
-        # Turn id to track the message no. in an individual chat.
-        self.turn_id = 1
+        self.collection = self.chroma_client.get_or_create_collection(name = db_name)
 
         try:
             self.llm = ChatGoogleGenerativeAI(model = model_name,
@@ -41,12 +39,12 @@ class RunModel:
         except Exception as e:
             print(f"ERROR : {e}")
 
-    def initiate_run(self, user_prompt: str, session_id: str, user_id: str):
+    def initiate_run(self, user_prompt: str, session_id: str, user_name: str):
         """
         Used to initiate the first run to create the user memory.
         :param user_prompt: The first prompt given by the user.
         :param session_id: The session of the chat.
-        :param user_id: The unique id of the user.
+        :param user_name: The unique name of the user.
         :return: The first output and the memory.
         """
 
@@ -129,20 +127,18 @@ class RunModel:
                 f"User feeling: {user_prompt}\n"
                 f"Therapist final response: {output}"
             ],
-            metadatas=[{"session_id": session_id, "turn_id": self.turn_id, "user_id": user_id}],
-            ids=[f"{session_id}_{self.turn_id}"]
+            metadatas=[{"session_id": session_id, "user_name": user_name}],
+            ids=[f"{session_id}"]
         )
-
-        self.turn_id += 1
 
         return output
 
-    def run(self, user_prompt, session_id: str, user_id: str):
+    def run(self, user_prompt, session_id: str, user_name: str):
         """
         The main function for running the whole LLMChain and using it via frontend for the user.
         :param user_prompt: The prompt given by the user.
         :param session_id: The unique id of a chat session.
-        :param user_id: The unique id of the user.
+        :param user_name: The unique name of the user.
         :return: The final answer to the users question or chat discussion.
         """
         results = self.collection.query(
@@ -154,12 +150,12 @@ class RunModel:
         # filtering by user_id
         filtered_docs = [
             (doc, meta) for doc, meta in zip(results["documents"][0], results["metadatas"][0])
-            if meta.get("user_id") == user_id
+            if meta.get("user_name") == user_name
         ]
 
         # Checking if there are any data about previous sessions of the user.
         if not filtered_docs:
-            self.initiate_run(user_prompt = user_prompt, session_id = session_id, user_id = user_id)
+            self.initiate_run(user_prompt = user_prompt, session_id = session_id, user_name = user_name)
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", """You are a therapist in INDIA and your task is to address the mental issues of your client by asking progressive questions and listening patiently.\
@@ -224,10 +220,8 @@ class RunModel:
                 f"User feeling: {user_prompt}\n"
                 f"Therapist final response: {output}"
             ],
-            metadatas=[{"session_id": session_id, "turn_id": self.turn_id, "user_id": user_id}],
-            ids=[f"{session_id}_{self.turn_id}"]
+            metadatas=[{"session_id": session_id, "user_name": user_name}],
+            ids=[f"{session_id}"]
         )
-
-        self.turn_id += 1
 
         return output

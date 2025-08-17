@@ -8,18 +8,20 @@ db = client[db_name]
 validator = {
     "$jsonSchema": {
         "bsonType": "object",
-        "required": ["user_id", "session_ids", "chat_names"],
+        "required": ["user_name", "password"],
         "properties": {
-            "user_id": {"bsonType": "string"},
+            "user_name": {"bsonType": "string"},
             "session_ids": {"bsonType": "array",
                             "items": {"bsonType": "string"}},
             "chat_names": {"bsonType": "array",
-                           "items": {"bsonType": "string"}}
+                           "items": {"bsonType": "string"}},
+            "password": {"bsonType": "string"}
         }
     }
 }
 
 # Creating the user_data collection
+#db.drop_collection("user_data")
 collections = db.list_collection_names()
 if 'user_data' not in collections:
     db.create_collection(name = 'user_data',
