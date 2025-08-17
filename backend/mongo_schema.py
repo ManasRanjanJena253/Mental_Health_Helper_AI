@@ -14,8 +14,9 @@ validator = {
             "session_ids": {"bsonType": "array",
                             "items": {"bsonType": "string"}},
             "chat_names": {"bsonType": "array",
-                           "items": {"bsonType": "string"}},
-            "password": {"bsonType": "string"}
+                           "items": {"bsonType": "binData"}},
+            "password": {"bsonType": "string"},
+            "encryption_key": {"bsonType": "binData"}   # Binary data type for storing encryption keys.
         }
     }
 }

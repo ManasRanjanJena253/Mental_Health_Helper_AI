@@ -1,14 +1,10 @@
-from langchain_core.runnables import RunnablePassthrough
-from langchain_google_genai import ChatGoogleGenerativeAI
+import os
+import chromadb
 from dotenv import load_dotenv
 from langchain.prompts import ChatPromptTemplate
-from langchain.memory import ConversationBufferMemory
-from langchain.globals import set_verbose
 from langchain_core.output_parsers import StrOutputParser
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_chroma import Chroma
-import chromadb
-import os
+from langchain_core.runnables import RunnablePassthrough
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 load_dotenv()
 

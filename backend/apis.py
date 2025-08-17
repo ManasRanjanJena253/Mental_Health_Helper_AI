@@ -9,6 +9,7 @@ from backend.chat_runner import RunModel
 from mongo_schema import db
 from passlib.hash import bcrypt
 from fastapi.middleware.cors import CORSMiddleware
+from cryptography.fernet import Fernet
 
 ########################################################################################################################################################################
 # How bcrypt Works (Step by Step)
@@ -32,6 +33,9 @@ from fastapi.middleware.cors import CORSMiddleware
 # Next 22 chars → salt
 # Last part → actual hashed password
 #########################################################################################################################################################################
+
+# Using bcrypt for passwords because they can't be decrypted.
+# Using encryption for storing chat_names.
 
 load_dotenv()
 
@@ -77,8 +81,9 @@ def sign_in(user_name: str, password: str):
     if data:
         raise HTTPException(status_code = 409, detail = "User with this user_name already exists.")
 
+    key = Fernet.generate_key()
     hashed_password = bcrypt.hash(password)   # Using hashed password for extra safety.
-    collection.insert_one({"user_name": user_name, "password": hashed_password})
+    collection.insert_one({"user_name": user_name, "password": hashed_password, "encryption_key": key})
     return {"Confirmation": "Signed In Successfully. Proceed to Login"}
 
 @app.post("/login")
@@ -102,13 +107,15 @@ def list_sessions(user_name : str):
     :param user_name: The name of the user.
     :return: The list of session_ids and their respective chat names.
     """
-    model_runner = RunModel(db_name = f"VectorDB_{user_name}")
     try:
         sessions = collection.find_one({"user_name": user_name}, {"_id": 0, "session_ids": 1, "chat_names": 1})
     except Exception as e:
         raise HTTPException(status_code = 401, detail = str(e))
 
-    return {"session_ids": sessions["session_ids"], "chat_names": sessions["chat_names"]}
+    key = collection.find_one({"user_name": user_name}, {"_id": 0, "encryption_key": 1})["encryption_key"]
+    cypher = Fernet(key = key)
+    chat_names = [cypher.decrypt(k) for k in (sessions["chat_names"])]
+    return {"session_ids": sessions["session_ids"], "chat_names": chat_names}
 
 @app.post("/{user_name}/new_session")
 def new_session(user_name: str):
@@ -139,7 +146,10 @@ def chat(user_prompt: str, session_id: str, user_name: str):
         session_id_check = collection.find_one({"user_name": user_name, "session_ids": session_id})
         if not session_id_check:  # If the session id is new.
             chat_name = create_chat_name(user_prompt=user_prompt)
-            collection.update_one({"user_name": user_name}, {"$push": {"chat_names": chat_name, "session_ids": session_id}})
+            key = collection.find_one({"user_name": user_name})["encryption_key"]
+            cypher = Fernet(key)
+            encrypted_chat_name = cypher.encrypt(chat_name.encode())
+            collection.update_one({"user_name": user_name}, {"$push": {"chat_names": encrypted_chat_name, "session_ids": session_id}})
 
         response = model_runner.run(user_prompt = user_prompt,
                          session_id = session_id,
