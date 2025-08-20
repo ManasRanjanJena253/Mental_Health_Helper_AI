@@ -12,7 +12,7 @@ load_dotenv()
 #set_verbose(True)
 
 class RunModel:
-    def __init__(self, db_name: str, api_key = os.getenv("GOOGLE_API_KEY"), model_name: str = "gemini-2.0-flash", temperature: int = 0.3):
+    def __init__(self, db_name: str, api_key = os.getenv("GOOGLE_API_KEY"), model_name: str = "gemini-2.5-flash", temperature: int = 0.3):
         """
         Initializes the chat model running class.
         :param api_key: The api key of the model being used.
@@ -24,7 +24,7 @@ class RunModel:
         self.__api_key = api_key
 
         # Creating chroma client.
-        self.chroma_client = chromadb.PersistentClient(path = "./chroma")
+        self.chroma_client = chromadb.PersistentClient(path ="../chroma")
         self.collection = self.chroma_client.get_or_create_collection(name = db_name.replace(" ", "").lower())  # Handling the spaces in names.
 
         try:

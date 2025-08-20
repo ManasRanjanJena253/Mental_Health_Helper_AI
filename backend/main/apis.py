@@ -5,8 +5,8 @@ import uuid
 import os
 from langchain_google_genai import ChatGoogleGenerativeAI
 from dotenv import load_dotenv
-from backend.chat_runner import RunModel
-from mongo_schema import db
+from backend.main.chat_runner import RunModel
+from backend.core.mongo_schema import db
 from passlib.hash import bcrypt
 from fastapi.middleware.cors import CORSMiddleware
 from cryptography.fernet import Fernet
