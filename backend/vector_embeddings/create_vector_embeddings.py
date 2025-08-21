@@ -11,7 +11,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 import chromadb
 
 
@@ -34,20 +34,19 @@ class RAGIndex:
             model=embedding_model, google_api_key = self.google_api_key
         )
 
-        # Use LangChain's Chroma wrapper so we can use MMR, filters, etc.
+        # Using LangChain's Chroma wrapper so we can use MMR, filters, etc.
         self.collection_name = collection_name.replace(" ", "").lower()
         self.persist_dir = persist_dir
 
-        # Ensure the underlying persistent client exists for admin ops (delete/reset)
-        self._client = chromadb.PersistentClient(path=self.persist_dir)
-        # Create the LC vectorstore (creates/loads the same collection)
+        self._client = chromadb.PersistentClient(path = self.persist_dir)
+        # Create the LC vectorstore (creates/loads the same memory_collection)
         self.vs = Chroma(
             collection_name = self.collection_name,
             persist_directory = self.persist_dir,
             embedding_function = self.embeddings,
         )
 
-        # Chunking config
+        # Chunking
         self.splitter = RecursiveCharacterTextSplitter(
             chunk_size = chunk_size,
             chunk_overlap = chunk_overlap,
@@ -63,14 +62,15 @@ class RAGIndex:
             verbose = True,
         )
 
-        # Safety-forward, domain-aware prompt
         self.prompt = ChatPromptTemplate.from_template(
             """You are a careful, supportive assistant for mental health topics.
 Use the provided context (quotes from authoritative sources) to answer the user's question.
 If something is unclear or potentially high risk, say what you can and encourage seeking professional help.
-Be concise, kind, and practical.
+Be concise, kind, and practical. You will be provided some remedies after learning from which you need to help
+the user. Don't mention the retrieval or remedies directly or where you got the remedies from. Your sole
+responsibility is to help the user.
 
-# Context
+# Remedies
 {context}
 
 # Question
@@ -80,7 +80,6 @@ Be concise, kind, and practical.
         )
         self.chain = self.prompt | self.llm | StrOutputParser()
 
-    # ---------- Ingestion ----------
     @staticmethod
     def _hash_id(source: str, page: int, start: int, text: str) -> str:
         h = hashlib.sha1()
@@ -123,11 +122,11 @@ Be concise, kind, and practical.
     def index_pdf(self, pdf_path: str, rebuild_collection: bool = False) -> int:
         """
         Ingest a PDF as chunked documents with stable IDs.
-        If rebuild_collection=True, drop and recreate the collection cleanly.
+        If rebuild_collection=True, drop and recreate the memory_collection cleanly.
         Returns number of chunks indexed.
         """
         if rebuild_collection:
-            # safest: delete collection & recreate
+            # safest: delete memory_collection & recreate
             self._client.delete_collection(name=self.collection_name)
             self.vs = Chroma(
                 collection_name=self.collection_name,
@@ -155,7 +154,7 @@ Be concise, kind, and practical.
     # ---------- Retrieval + Answering ----------
     def retrieve(self, query: str, k: int = 6, fetch_k: int = 24) -> List[Document]:
         """
-        Use MMR to balance relevance + diversity. Great for long PDFs that repeat phrases.
+        Using MMR to balance relevance + diversity. Great for long PDFs that repeat phrases.
         """
         return self.vs.max_marginal_relevance_search(query, k = k, fetch_k=fetch_k)
 
@@ -189,7 +188,7 @@ if __name__ == "__main__":
     )
 
     # Index (set rebuild_collection=True the first time or when PDFs change substantially)
-    n = rag.index_pdf("Mental_health_remedies_or_best_practices.pdf", rebuild_collection = True)
+    n = rag.index_pdf("Mental_health_remedies_or_best_practices.pdf", rebuild_collection = False)
     print(f"Indexed {n} chunks.")
 
     # Ask something

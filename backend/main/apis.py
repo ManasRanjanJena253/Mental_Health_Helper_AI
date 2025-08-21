@@ -169,7 +169,7 @@ def delete_chat(user_name: str, session_id: str):
     """
     model_runner = RunModel(db_name=f"VectorDB_{user_name}")
     try:
-        model_runner.collection.delete(where = {"session_id": {"$eq": session_id}})
+        model_runner.memory_collection.delete(where = {"session_id": {"$eq": session_id}})
         removed_session_idx = collection.find_one({"user_name": user_name}, {"_id": 0, "session_ids": 1})["session_ids"].index(session_id)
 
         # Removing the specified session_id from mongodb

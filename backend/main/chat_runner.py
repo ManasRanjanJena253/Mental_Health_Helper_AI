@@ -4,7 +4,8 @@ from dotenv import load_dotenv
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_chroma import Chroma
 
 load_dotenv()
 
@@ -18,14 +19,30 @@ class RunModel:
         :param api_key: The api key of the model being used.
         :param model_name: The name of the model being used.
         :param temperature: The temperature of the model (It controls the creativity of model, too high value will result in gibberish).
-        :param db_name: The name of the chromadb collection based on the user.
+        :param db_name: The name of the chromadb memory_collection based on the user.
         """
         # Loading the llm
         self.__api_key = api_key
-
+        self.embeddings = GoogleGenerativeAIEmbeddings(
+            model = "gemini-embedding-001", google_api_key = self.__api_key
+        )
         # Creating chroma client.
-        self.chroma_client = chromadb.PersistentClient(path ="../chroma")
-        self.collection = self.chroma_client.get_or_create_collection(name = db_name.replace(" ", "").lower())  # Handling the spaces in names.
+        self.chroma_memory_client = chromadb.PersistentClient(path ="../chroma")
+        self.memory_collection = self.chroma_memory_client.get_or_create_collection(name = db_name.replace(" ", "").lower())  # Handling the spaces in names.
+
+        self.chroma_taboo_client = chromadb.PersistentClient(path = "backend/vector_embeddings/Mental_Health_Taboos_In_India")
+        self.taboo_collection = self.chroma_memory_client.get_or_create_collection(name ="mentalhealthtaboosinindia")
+
+        self.indian_taboo_vector_store = Chroma(collection_name = "mentalhealthtaboosinindia",
+                                                persist_directory = "backend/vector_embeddings/Mental_Health_Taboos_In_India",
+                                                embedding_function = self.embeddings)
+
+        self.remedies_vector_store = Chroma(collection_name = "mentalhealthremedies",
+                                            persist_directory = "backend/vector_embeddings/Mental_Health_Remedies",
+                                            embedding_function = self.embeddings)
+
+        self.remedies_client = chromadb.PersistentClient(path = "backend/vector_embeddings/Mental_Health_Remedies")
+        self.remedies_collection = self.remedies_client.get_or_create_collection(name = "mentalhealthremedies")
 
         try:
             self.llm = ChatGoogleGenerativeAI(model = model_name,
@@ -44,54 +61,42 @@ class RunModel:
         :return: The first output and the memory.
         """
 
-        # Creating various prompts for chaining, to avoid the model from hallucinating and having better reasoning capabilities
+        remedies_context = self.remedies_vector_store.max_marginal_relevance_search(query = user_prompt,
+                                                                                    k = 5,
+                                                                                    fetch_k = 25)
 
-        prompt_1 = ChatPromptTemplate.from_messages([
-            ("system", "You are a psychologist and you need to identify the potential mental issues regarding the query made by the user.\
-            Provide the identified issues as a list and formulate the procedure by which the therapist should address these for resolving these.\
-            You are in INDIA where mental health is stigmatised and frowned upon,\
-            so make sure the procedures to be used by therapist to destigmatize and comfort the patient simultaneously."),
-            ("user", "{feeling}")
+        taboo_details = self.indian_taboo_vector_store.max_marginal_relevance_search(query = user_prompt,
+                                                                                     k = 5,
+                                                                                     fetch_k = 25)
+        system_prompt = ChatPromptTemplate.from_messages([
+            ("system", "You are an AI Therapist in INDIA and you are trying to help your client using your knowledge about the issue that the client is currently facing.\n"
+                       "You have to make the client feel accepted and by also debunking the taboos that might be associated regarding the client's mental state or situation\n"
+                       "In India. You will provided with the following resources to help you i.e 1. The taboos regarding the clients state in India. 2. The general remedies or"
+                       "methods to help on the client based on the knowledge of an actual therapist."
+                       "1. The taboos : \n"
+                       "{taboo_details}\n\n"
+                       "2. The knowledge from the therapist : \n"
+                       "{remedies_context}\n\n"
+                       "Remember no need to address any of the following except Your past convo directly to the patient all these are for your help and for you to perform better. "
+                       "If the user asks anything outside the scope of a therapist, simply just DENY it."),
+            ("user", "{query}")
         ])
 
-        prompt_2 = ChatPromptTemplate.from_messages([
-            ("system", """You are a therapist in INDIA and your task is to address the mental issues of your client by asking progressive questions and listening patiently.\
-                       You will be provided with the procedures provided by the doctor to be taken were learn from to resolve those issues. You also need to identify the \
-                       cultural or traditional stigma that might be the root cause of distress of the client. Don't address the doctor's remedies directly to the user,\
-                       and no need to tell the patient about any of your postural changes you do, just try to convey those kindness and tonality change through your language.\
-                       You need to WAIT for the users reply after asking a question, this is a LIVE session NOT a play.\
-                        You need to WAIT for the users reply after asking a question, this is a LIVE session NOT a play.\n""
-                        Anything asked out of the scope of a therapist you should strictly deny it. 
-                        Try to keep your responses more interactive and longer."""),
-            ("user", "plz help !!!, the suggestions given by the doctor are : {remedies}"),
-        ])
-
-        # Creating the chain
-        # chain1 : Identifying the remedies.
-        chain_1 = (
-                {"feeling": RunnablePassthrough()}
-                | prompt_1
-                | self.llm
-                | StrOutputParser()
-        )
-
-        # chain2
-        chain_2 = (
-                {"remedies": chain_1}
-                | prompt_2
-                | self.llm
-                | StrOutputParser()
-        )
+        main_chain = system_prompt | self.llm | StrOutputParser()
 
         # Running the full pipeline
-        output = chain_2.invoke({"feeling": user_prompt})
+        output = main_chain.invoke({
+                "taboo_details": taboo_details,
+                "remedies_context": remedies_context,
+                "query": user_prompt
+            })
 
         # Checking if the model produced any output or not.
         if not output:
             raise ValueError("UNABLE TO GENERATE A REPLY !!! \n Plz Try Again Later.")
 
         # Adding the session data into the chromadb
-        self.collection.add(
+        self.memory_collection.add(
             documents=[
                 f"User feeling: {user_prompt}\n"
                 f"Therapist final response: {output}"
@@ -110,15 +115,23 @@ class RunModel:
         :param user_name: The unique name of the user.
         :return: The final answer to the users question or chat discussion.
         """
-        results = self.collection.query(
+        retrieved_memory = self.memory_collection.query(
             query_texts = [user_prompt],
             n_results = 5,
             where = {"session_id": {"$eq": session_id}}
         )
 
+        remedies_context = self.remedies_vector_store.max_marginal_relevance_search(query = user_prompt,
+                                                                                    k = 5,
+                                                                                    fetch_k = 25)
+
+        taboo_details = self.indian_taboo_vector_store.max_marginal_relevance_search(query = user_prompt,
+                                                                                     k = 5,
+                                                                                     fetch_k = 25)
+
         # filtering by user_id
         filtered_docs = [
-            (doc, meta) for doc, meta in zip(results["documents"][0], results["metadatas"][0])
+            (doc, meta) for doc, meta in zip(retrieved_memory["documents"][0], retrieved_memory["metadatas"][0])
             if meta.get("user_name") == user_name
         ]
 
@@ -126,74 +139,33 @@ class RunModel:
         if not filtered_docs:
             self.initiate_run(user_prompt = user_prompt, session_id = session_id, user_name = user_name)
 
-        assistant_prompt = ChatPromptTemplate.from_messages([
-            ("system", """ You are an assistant responsible for keeping in check that the ai therapist is keeping him on the right track in helping the issue of the patient.\n
-                        TO do this you need to strictly and clearly tell the therapist what his next steps will be, based on the info you will be provided on the past interaction 
-                        with the patient. Make sure that the issues like societal and traditional bounds are addressed correctly as you are in INDIA. In every step try to destigmatize the 
-                        traditional orthodox beliefs related to their culture and may be the cause of distress in patients.                  
-                        These are the qualities you need to enforce on the therapist AI: \n
-                        Step 1 --> Validating the patient’s feelings without judgment.\n
-                        Step 2 --> Identifying cognitive distortions and gently educating the patient.\n
-                        Step 3 --> Providing practical strategies for challenging negative thinking.\n
-                        Step 4 --> Encouraging self-awareness and insight into underlying beliefs.\n
-                        Step 5 --> Setting a collaborative, supportive tone for ongoing progress.\n
-                       Therapist shouldn't ask only questions it have to also try to comfort the patient on their given answers and make them feel safe. For example : \n
-                         Patient: I feel like I’m failing at everything.\n
-                        
-                        Therapist: That’s tough. Can you give one example? (Validation & Active Listening)\n
-                        
-                        Patient: I messed up a presentation and skipped my workout.\n
-                        
-                        Therapist: What about something you did well recently? (Cognitive Reframing)\n
-                        
-                        Patient: I helped a colleague solve a problem yesterday.\n
-                        
-                        Therapist: Good! Your mind is focusing on negatives—this is all-or-nothing thinking. (Psychoeducation)\n
-                        
-                        Patient: It feels real, though.\n
-                        
-                        Therapist: When it arises, try: “I failed here, but I succeeded there.” (Behavioral / Cognitive Strategy)\n
-                        
-                        Patient: I can try that.\n
-                        
-                        Therapist: Also, consider if your expectations are realistic. (Guided Discovery / Goal Setting)\n
-                        Anything asked out of the scope of a therapist you should strictly deny it and say NO. 
-                        Try to keep your responses more interactive and longer."""),
-            ("user", "Previous_Context : {context}")
-        ])
-        main_prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are a therapist in INDIA and your task is to address the mental issues of your client by asking progressive questions and listening patiently.\
-                       You have already had some conversation with the patient and this is a continuation.Your previous conversation : {context}. You also need to identify the \
-                       cultural or traditional stigma that might be the root cause of distress of the client. Don't address the doctor's remedies directly to the user,\
-                       and no need to tell the patient about any of your postural changes you do, just try to convey those kindness and tonality change through your language.\
-                       You need to WAIT for the users reply after asking a question, this is a LIVE session NOT a play.\n""
-                       "\n\n \
-                        Anything asked out of the scope of a therapist you should strictly deny it. 
-                        Try to keep your responses more interactive and longer.
-                        You will be constantly given instructions on how to handle the conversation and therapy session. You need to follow those instructions STRICTLY. """),
-            ("user", "{response}"),
+        system_prompt = ChatPromptTemplate.from_messages([
+            ("system", "You are an AI Therapist in INDIA and you are trying to help your client using your knowledge about the issue that the client is currently facing.\n"
+                       "You have to make the client feel accepted and by also debunking the taboos that might be associated regarding the client's mental state or situation\n"
+                       "In India. You will provided with the following resources to help you i.e 1. The taboos regarding the clients state in India. 2. The general remedies or"
+                       "methods to help on the client based on the knowledge of an actual therapist. 3. The details regarding your past conversations with the client for you to refer to them.\n"
+                       "1. The taboos : \n"
+                       "{taboo_details}\n\n"
+                       "2. The knowledge from the therapist : \n"
+                       "{remedies_context}\n\n"
+                       "3. Your past conversation with the patient : \n"
+                       "{retrieved_memory}\n\n"
+                       "Remember no need to address any of the following except Your past convo directly to the patient all these are for your help and for you to perform better. "
+                       "If the user asks anything outside the scope of a therapist, simply just DENY it."),
+            ("user", "{query}")
         ])
 
         context_str = "\n".join([doc for doc, _ in filtered_docs])
 
-        assist_chain = ({"context": RunnablePassthrough()}
-                    | assistant_prompt
-                    | self.llm
-                    | StrOutputParser())
-
-        instructions = assist_chain.invoke({"context": context_str})
-
-        main_chain = ({"response": RunnablePassthrough(), "context": RunnablePassthrough(), "instructions": RunnablePassthrough()}
-                 | main_prompt
-                 | self.llm
-                 | StrOutputParser())
+        main_chain = system_prompt | self.llm | StrOutputParser()
 
         try:
             output = main_chain.invoke({
-                    "response": user_prompt,
-                    "context": context_str,
-                    "instructions": instructions
-                })
+                "taboo_details": taboo_details,
+                "remedies_context": remedies_context,
+                "retrieved_memory": context_str,
+                "query": user_prompt
+            })
 
         except Exception as e:
             return f"Error : {e}"
@@ -202,7 +174,7 @@ class RunModel:
         if not output:
             raise ValueError("UNABLE TO GENERATE A REPLY !!! \n Plz Try Again Later.")
 
-        self.collection.add(
+        self.memory_collection.add(
             documents=[
                 f"User feeling: {user_prompt}\n"
                 f"Therapist final response: {output}"

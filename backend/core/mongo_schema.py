@@ -21,7 +21,7 @@ validator = {
     }
 }
 
-# Creating the user_data collection
+# Creating the user_data memory_collection
 #db.drop_collection("user_data")
 collections = db.list_collection_names()
 if 'user_data' not in collections:
