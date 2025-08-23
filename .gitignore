@@ -1,4 +1,4 @@
 .env
-/backend/vector_embeddings/Mental_Health_Remedies/
-/backend/vector_embeddings/Mental_Health_Taboos_In_India/
+/backend/main/Mental_Health_Remedies/
+/backend/main/Mental_Health_Taboos_In_India/
 /backend/vector_embeddings/Yoga_And_Exercises_For_Mental_Health/

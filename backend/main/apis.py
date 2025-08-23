@@ -6,7 +6,7 @@ import os
 from langchain_google_genai import ChatGoogleGenerativeAI
 from dotenv import load_dotenv
 from backend.main.chat_runner import RunModel
-from backend.core.mongo_schema import db
+# from backend.core.mongo_schema import db
 from passlib.hash import bcrypt
 from fastapi.middleware.cors import CORSMiddleware
 from cryptography.fernet import Fernet
@@ -40,7 +40,11 @@ from cryptography.fernet import Fernet
 load_dotenv()
 
 app = FastAPI()
+from motor.motor_asyncio import AsyncIOMotorClient
 
+client = AsyncIOMotorClient(port = 27017, host = "localhost")
+db_name = "Mental_Health_AI_User_Database"
+db = client[db_name]
 collection = db["user_data"]
 
 app.add_middleware(
@@ -65,66 +69,68 @@ def create_chat_name(user_prompt: str):
 
     return response.content
 
-def authenticate_user(user_name: str, password: str):
+async def authenticate_user(user_name: str, password: str):
     """
     Used for checking if the user is a registered user or not.
     :param user_name: Name of the user.
     :param password: Password of the user.
     :return: Boolean verification,
     """
-    stored = collection.find_one({"user_name": user_name}, {"_id": 0, "password": 1})
+    stored = await collection.find_one({"user_name": user_name}, {"_id": 0, "password": 1})
     return bcrypt.verify(password, stored["password"])   # Verifying the password.
 
 @app.post("/sign_in")
-def sign_in(user_name: str, password: str):
-    data = collection.find_one({"user_name": user_name})
+async def sign_in(user_name: str, password: str):
+    data = await collection.find_one({"user_name": user_name})
     if data:
         raise HTTPException(status_code = 409, detail = "User with this user_name already exists.")
 
     key = Fernet.generate_key()
     hashed_password = bcrypt.hash(password)   # Using hashed password for extra safety.
-    collection.insert_one({"user_name": user_name, "password": hashed_password, "encryption_key": key})
+    await collection.insert_one({"user_name": user_name, "password": hashed_password, "encryption_key": key})
     return {"Confirmation": "Signed In Successfully. Proceed to Login"}
 
 @app.post("/login")
-def login(user_name: str, password: str):
+async def login(user_name: str, password: str):
     """
     API endpoint for authorising the login.
     :param user_name: The name of the user.
     :param password: The password of the user.
     :return: The confirmation message.
     """
-    user = collection.find_one({"user_name": user_name})
+    user = await collection.find_one({"user_name": user_name})
     if not user and not authenticate_user(user_name, password):
         raise HTTPException(status_code = 401, detail = "Invalid credentials !!! \n Plz Sign in First OR Check the Credentials.")
 
     return {"login_status": "Successful"}
 
 @app.get("/{user_name}/all_sessions")
-def list_sessions(user_name : str):
+async def list_sessions(user_name : str):
     """
     Give a list of all the chat sessions created by the user.
     :param user_name: The name of the user.
     :return: The list of session_ids and their respective chat names.
     """
     try:
-        sessions = collection.find_one({"user_name": user_name}, {"_id": 0, "session_ids": 1, "chat_names": 1})
+        sessions = await collection.find_one({"user_name": user_name}, {"_id": 0, "session_ids": 1, "chat_names": 1, "chats": 1})
     except Exception as e:
         raise HTTPException(status_code = 401, detail = str(e))
 
-    key = collection.find_one({"user_name": user_name}, {"_id": 0, "encryption_key": 1})["encryption_key"]
+    doc = await collection.find_one({"user_name": user_name}, {"_id": 0, "encryption_key": 1})
+    key = doc["encryption_key"]
     cypher = Fernet(key = key)
     chat_names = [cypher.decrypt(k) for k in (sessions["chat_names"])]
+    chats = []
     return {"session_ids": sessions["session_ids"], "chat_names": chat_names}
 
 @app.post("/{user_name}/new_session")
-def new_session(user_name: str):
+async def new_session(user_name: str):
     """
     Creates a new session id for the user to start a new conversation.
     :param user_name: The unique user_name of the user.
     :return: The new session id.
     """
-    result = collection.find_one({"user_name": user_name})
+    result = await collection.find_one({"user_name": user_name})
     if result:
         session_id = str(uuid.uuid4())
         return {"session_id": session_id}
@@ -132,7 +138,7 @@ def new_session(user_name: str):
         raise HTTPException(status_code = 404, detail = "User not found.")
 
 @app.post("/{user_name}/{session_id}/chat")
-def chat(user_prompt: str, session_id: str, user_name: str):
+async def chat(user_prompt: str, session_id: str, user_name: str):
     """
     API endpoint which enables user to interact with the llm.
     :param user_prompt: The query of the user.
@@ -141,26 +147,34 @@ def chat(user_prompt: str, session_id: str, user_name: str):
     :return: The response given by the llm.
     """
     model_runner = RunModel(db_name=f"VectorDB_{user_name}")
+    doc  = await collection.find_one({"user_name": user_name})
+    key = doc["encryption_key"]
+    cypher = Fernet(key)
 
     try:
-        session_id_check = collection.find_one({"user_name": user_name, "session_ids": session_id})
+        session_id_check = await collection.find_one({"user_name": user_name, "session_ids": session_id})
         if not session_id_check:  # If the session id is new.
             chat_name = create_chat_name(user_prompt=user_prompt)
-            key = collection.find_one({"user_name": user_name})["encryption_key"]
-            cypher = Fernet(key)
             encrypted_chat_name = cypher.encrypt(chat_name.encode())
-            collection.update_one({"user_name": user_name}, {"$push": {"chat_names": encrypted_chat_name, "session_ids": session_id}})
+            await collection.update_one({"user_name": user_name}, {"$push": {"chat_names": encrypted_chat_name, "session_ids": session_id}})
 
         response = model_runner.run(user_prompt = user_prompt,
                          session_id = session_id,
                          user_name = user_name)
+        encrypted_user_message = cypher.encrypt(user_prompt.encode())
+        encrypted_ai_message = cypher.encrypt(response.encode())
+        await collection.update_one({"user_name": user_name},
+                              {"$push": {"chats":
+                                             {"user_message": encrypted_user_message, "ai_message": encrypted_ai_message}
+                              }
+                               })
     except Exception as e:
         raise HTTPException(status_code = 500, detail = str(e))
 
     return {"response": response}
 
 @app.delete("/{user_name}/{session_id}/delete")
-def delete_chat(user_name: str, session_id: str):
+async def delete_chat(user_name: str, session_id: str):
     """
     API endpoint to delete a particular chat history.
     :param session_id: The chat id that the user want to delete.
@@ -169,17 +183,17 @@ def delete_chat(user_name: str, session_id: str):
     """
     model_runner = RunModel(db_name=f"VectorDB_{user_name}")
     try:
-        model_runner.memory_collection.delete(where = {"session_id": {"$eq": session_id}})
-        removed_session_idx = collection.find_one({"user_name": user_name}, {"_id": 0, "session_ids": 1})["session_ids"].index(session_id)
+        await model_runner.memory_collection.delete(where = {"session_id": {"$eq": session_id}})
+        removed_session_idx = await collection.find_one({"user_name": user_name}, {"_id": 0, "session_ids": 1})["session_ids"].index(session_id)
 
         # Removing the specified session_id from mongodb
-        collection.update_one({"user_name": user_name}, {"$pull": {"session_ids.items": session_id}})  # $pull is used to remove an element.
+        await collection.update_one({"user_name": user_name}, {"$pull": {"session_ids.items": session_id}})  # $pull is used to remove an element.
 
         # Setting the chat_name at the removed session_id index to be null
-        collection.update_one({"user_name": user_name}, {"$unset": {f"chat_names.{removed_session_idx}": 1}})
+        await collection.update_one({"user_name": user_name}, {"$unset": {f"chat_names.{removed_session_idx}": 1}})
 
         # Removing the null element from the chat_names
-        collection.update_one(({"user_name": user_name}, {"$pull": {"chat_names": None}}))
+        await collection.update_one(({"user_name": user_name}, {"$pull": {"chat_names": None}}))
 
         return {"Confirmation": "Successful"}
 
