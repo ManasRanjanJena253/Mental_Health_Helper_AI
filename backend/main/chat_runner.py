@@ -170,7 +170,8 @@ class RunModel:
         system_prompt = ChatPromptTemplate.from_messages([
             ("system",
              "You are a compassionate therapist in India. "
-             "Your role is to guide the client with empathy, practical advice, and cultural awareness. "
+             "Your role is to guide the client with empathy, practical advice, and cultural awareness."
+             "If you are getting the context about past convo no, need to say Namaste as you have already greeted the patient before."
              "You have access to background knowledge about: "
              "1) Common taboos around mental health in India. "
              "2) Remedies and therapeutic practices. "
@@ -225,5 +226,5 @@ class RunModel:
 
         return output
 
-model_runner = RunModel(db_name = "vector")
-print(model_runner.initiate_run("I am feeling really depressed", session_id = "68790798v", user_name = "Raj"))
+# model_runner = RunModel(db_name = "vector")
+# print(model_runner.initiate_run("I am feeling really depressed", session_id = "68790798v", user_name = "Raj"))
