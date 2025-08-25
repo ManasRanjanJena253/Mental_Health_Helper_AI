@@ -1,5 +1,6 @@
+import shutil
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File
 from fastapi.exceptions import HTTPException
 import uuid
 import os
@@ -12,7 +13,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from cryptography.fernet import Fernet
 from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime
-from typing import Optional, List, Dict
+from typing import Optional
+from fastapi.responses import StreamingResponse
 
 ########################################################################################################################################################################
 # How bcrypt Works (Step by Step)
@@ -262,24 +264,23 @@ async def new_session(user_name: str):
 
 
 @app.post("/{user_name}/{session_id}/chat")
-async def chat(user_prompt: str, session_id: str, user_name: str, chat_type = "text"):
+async def chat(user_prompt: str, session_id: str, user_name: str):
     """
     API endpoint which enables user to interact with the llm.
     :param user_prompt: The query of the user.
     :param session_id: The chat the user want to ask the query in.
     :param user_name: The name of the user.
-    :param chat_type: The type of chat the user want to have. It can be either "text" (by default) or "voice".
     :return: The response given by the llm.
     """
     try:
         # Validating user exists and getting encryption key
         doc = await collection.find_one({"user_name": user_name})
         if not doc:
-            raise HTTPException(status_code=404, detail="User not found.")
+            raise HTTPException(status_code = 404, detail = "User not found.")
 
         key = doc.get("encryption_key")
         if not key:
-            raise HTTPException(status_code=500, detail="Encryption key not found.")
+            raise HTTPException(status_code = 500, detail = "Encryption key not found.")
 
         cipher = Fernet(key)
 
@@ -456,6 +457,124 @@ async def get_messages(user_name: str, session_id: str, limit: Optional[int] = 5
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/{user_name}/{session_id}/chat/voice")
+async def voice_chat(session_id: str, user_name: str, file: UploadFile = File(...)):
+    """
+    FastAPI endpoint for streaming TTS audio.
+    """
+    # Save uploaded file temporarily
+    temp_path = f"temp_{file.filename}"
+    with open(temp_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    from backend.main.voice_bridge import MindHavenVoice
+    voice_service = MindHavenVoice()
+
+    user_prompt = voice_service.speech_to_text(audio_file = temp_path)
+
+    try:
+        # Validating user exists and getting encryption key
+        doc = await collection.find_one({"user_name": user_name})
+        if not doc:
+            raise HTTPException(status_code = 404, detail = "User not found.")
+
+        key = doc.get("encryption_key")
+        if not key:
+            raise HTTPException(status_code = 500, detail = "Encryption key not found.")
+
+        cipher = Fernet(key)
+
+        # Check if this is a new session
+        session_ids = doc.get("session_ids", [])
+        is_new_session = session_id not in session_ids
+
+        if is_new_session:
+            # Create chat name for new session
+            chat_name = create_chat_name(user_prompt=user_prompt)
+            encrypted_chat_name = cipher.encrypt(chat_name.encode('utf-8'))
+
+            # Initialize new session with empty chat array
+            await collection.update_one(
+                {"user_name": user_name},
+                {
+                    "$push": {
+                        "session_ids": session_id,
+                        "chat_names": encrypted_chat_name,
+                        "chats": []  # Initialize empty array for this session's messages
+                    }
+                }
+            )
+        else:
+            # Ensure chats array has correct length
+            session_index = session_ids.index(session_id)
+            chats = doc.get("chats", [])
+
+            # If chats array is shorter than session_ids, pad it with empty arrays
+            while len(chats) <= session_index:
+                await collection.update_one(
+                    {"user_name": user_name},
+                    {"$push": {"chats": []}}
+                )
+
+        # Get model runner and generate response
+        model_runner = get_model_runner(user_name)
+        response = model_runner.run(
+            user_prompt = user_prompt,
+            session_id = session_id,
+            user_name = user_name
+        )
+
+        audio_stream = voice_service.gtts_stream(
+            text = response
+        )
+
+        # Encrypt messages
+        encrypted_user_message = cipher.encrypt(user_prompt.encode('utf-8'))
+        encrypted_ai_message = cipher.encrypt(response.encode('utf-8'))
+
+        # Create message object
+        message_obj = {
+            "user_message": encrypted_user_message,
+            "ai_message": encrypted_ai_message,
+            "timestamp": datetime.utcnow()
+        }
+
+        # Find session index and update the specific chat array
+        updated_doc = await collection.find_one({"user_name": user_name})
+        current_session_ids = updated_doc.get("session_ids", [])
+
+        if session_id in current_session_ids:
+            session_index = current_session_ids.index(session_id)
+
+            # Update the specific chat array for this session
+            await collection.update_one(
+                {"user_name": user_name},
+                {"$push": {f"chats.{session_index}": message_obj}}
+            )
+
+        return StreamingResponse(
+            audio_stream,
+            media_type = "audio/mpeg",
+            headers = {
+                "Content-Disposition": "inline; filename=speech.mp3",
+                "Cache-Control": "no-cache"
+            }
+        )
+
+    except ValueError as e:
+        return {"error": str(e)}, 400
+    except Exception as e:
+        return {"error": f"TTS generation failed: {str(e)}"}, 500
+
+    finally:
+
+        try:
+            os.remove(temp_path)
+        except Exception:
+            pass
+
 
 if __name__ == "__main__":
     uvicorn.run(app = app, port = 8001)
