@@ -262,12 +262,13 @@ async def new_session(user_name: str):
 
 
 @app.post("/{user_name}/{session_id}/chat")
-async def chat(user_prompt: str, session_id: str, user_name: str):
+async def chat(user_prompt: str, session_id: str, user_name: str, chat_type = "text"):
     """
     API endpoint which enables user to interact with the llm.
     :param user_prompt: The query of the user.
     :param session_id: The chat the user want to ask the query in.
     :param user_name: The name of the user.
+    :param chat_type: The type of chat the user want to have. It can be either "text" (by default) or "voice".
     :return: The response given by the llm.
     """
     try:
