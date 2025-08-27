@@ -1,0 +1,1225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MindHaven Chat</title>
+    <style>/* Root Variables - Pastel Peach, Blush, Lavender Theme */
+:root {
+  --chat-primary-bg: #FFF8F5;
+  --chat-secondary-bg: #FFFAF8;
+  --chat-accent-peach: #FFD6CC;
+  --chat-accent-blush: #F7C6C7;
+  --chat-accent-lavender: #E6E0F8;
+  --chat-text-primary: #4A4A4A;
+  --chat-text-secondary: #6B6B6B;
+  --chat-text-light: #8A8A8A;
+  --chat-border-light: rgba(255, 214, 204, 0.3);
+  --chat-shadow-soft: 0 4px 20px rgba(255, 214, 204, 0.15);
+  --chat-shadow-hover: 0 8px 25px rgba(255, 214, 204, 0.25);
+  --chat-gradient-primary: linear-gradient(135deg, #FFD6CC 0%, #F7C6C7 50%, #E6E0F8 100%);
+  --chat-gradient-subtle: linear-gradient(135deg, rgba(255, 214, 204, 0.1) 0%, rgba(247, 198, 199, 0.1) 100%);
+  --chat-white: #FFFFFF;
+  --chat-error: #FF6B6B;
+  --chat-success: #51CF66;
+  --chat-font-primary: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --chat-font-weight-light: 300;
+  --chat-font-weight-regular: 400;
+  --chat-font-weight-medium: 500;
+  --chat-font-weight-semibold: 600;
+  --chat-font-weight-bold: 700;
+  --chat-radius-sm: 8px;
+  --chat-radius-md: 12px;
+  --chat-radius-lg: 16px;
+  --chat-radius-xl: 20px;
+  --chat-transition-fast: all 0.2s ease;
+  --chat-transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --chat-transition-bounce: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Reset and Base Styles */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  font-family: var(--chat-font-primary);
+  background: var(--chat-primary-bg);
+  color: var(--chat-text-primary);
+  line-height: 1.6;
+  overflow: hidden;
+}
+
+/* Loading Banner */
+.chat-loading-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: var(--chat-gradient-primary);
+  color: var(--chat-text-primary);
+  padding: 12px 0;
+  text-align: center;
+  z-index: 1000;
+  transform: translateY(-100%);
+  transition: var(--chat-transition-smooth);
+  box-shadow: var(--chat-shadow-soft);
+}
+
+.chat-loading-banner.chat-show {
+  transform: translateY(0);
+}
+
+.chat-banner-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.chat-banner-icon {
+  font-size: 16px;
+  animation: chat-pulse 2s infinite;
+}
+
+.chat-banner-text {
+  font-weight: var(--chat-font-weight-medium);
+  font-size: 14px;
+}
+
+@keyframes chat-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* Modal Styles */
+.chat-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 248, 245, 0.95);
+  backdrop-filter: blur(10px);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: var(--chat-transition-smooth);
+}
+
+.chat-modal-overlay.chat-show {
+  opacity: 1;
+  visibility: visible;
+}
+
+.chat-modal {
+  background: var(--chat-white);
+  border-radius: var(--chat-radius-lg);
+  box-shadow: var(--chat-shadow-hover);
+  max-width: 400px;
+  width: 90%;
+  transform: translateY(20px) scale(0.95);
+  transition: var(--chat-transition-bounce);
+  border: 1px solid var(--chat-border-light);
+}
+
+.chat-modal-overlay.chat-show .chat-modal {
+  transform: translateY(0) scale(1);
+}
+
+.chat-modal-header {
+  padding: 24px 24px 0;
+  border-bottom: 1px solid var(--chat-border-light);
+  margin-bottom: 20px;
+}
+
+.chat-modal-title {
+  font-size: 20px;
+  font-weight: var(--chat-font-weight-semibold);
+  color: var(--chat-text-primary);
+  margin-bottom: 20px;
+}
+
+.chat-modal-body {
+  padding: 0 24px 24px;
+}
+
+.chat-modal-text {
+  color: var(--chat-text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.chat-setup-input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid var(--chat-border-light);
+  border-radius: var(--chat-radius-md);
+  font-family: var(--chat-font-primary);
+  font-size: 14px;
+  background: var(--chat-secondary-bg);
+  transition: var(--chat-transition-fast);
+}
+
+.chat-setup-input:focus {
+  outline: none;
+  border-color: var(--chat-accent-peach);
+  box-shadow: 0 0 0 3px rgba(255, 214, 204, 0.1);
+}
+
+.chat-modal-footer {
+  padding: 0 24px 24px;
+}
+
+.chat-modal-btn {
+  width: 100%;
+  padding: 12px 24px;
+  background: var(--chat-gradient-primary);
+  color: var(--chat-text-primary);
+  border: none;
+  border-radius: var(--chat-radius-md);
+  font-family: var(--chat-font-primary);
+  font-weight: var(--chat-font-weight-medium);
+  font-size: 14px;
+  cursor: pointer;
+  transition: var(--chat-transition-fast);
+  box-shadow: var(--chat-shadow-soft);
+}
+
+.chat-modal-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--chat-shadow-hover);
+}
+
+/* Main Container */
+.chat-main-container {
+  display: flex;
+  height: 100vh;
+  background: var(--chat-primary-bg);
+}
+
+/* Sidebar */
+.chat-sidebar {
+  width: 280px;
+  background: var(--chat-white);
+  border-right: 1px solid var(--chat-border-light);
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--chat-shadow-soft);
+}
+
+.chat-sidebar-header {
+  padding: 24px 20px;
+  border-bottom: 1px solid var(--chat-border-light);
+  background: var(--chat-gradient-subtle);
+}
+
+.chat-sidebar-title {
+  font-size: 24px;
+  font-weight: var(--chat-font-weight-bold);
+  color: var(--chat-text-primary);
+  margin-bottom: 16px;
+  background: var(--chat-gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.chat-new-session-btn {
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--chat-gradient-primary);
+  color: var(--chat-text-primary);
+  border: none;
+  border-radius: var(--chat-radius-md);
+  font-family: var(--chat-font-primary);
+  font-weight: var(--chat-font-weight-medium);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: var(--chat-transition-fast);
+  box-shadow: var(--chat-shadow-soft);
+}
+
+.chat-new-session-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--chat-shadow-hover);
+}
+
+.chat-btn-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.chat-sessions-container {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.chat-sessions-title {
+  font-size: 14px;
+  font-weight: var(--chat-font-weight-semibold);
+  color: var(--chat-text-secondary);
+  margin-bottom: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.chat-sessions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-session-item {
+  padding: 12px 16px;
+  background: var(--chat-secondary-bg);
+  border: 1px solid var(--chat-border-light);
+  border-radius: var(--chat-radius-md);
+  cursor: pointer;
+  transition: var(--chat-transition-fast);
+  font-size: 14px;
+  color: var(--chat-text-secondary);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.chat-session-item:hover {
+  background: var(--chat-gradient-subtle);
+  transform: translateY(-1px);
+  box-shadow: var(--chat-shadow-soft);
+}
+
+.chat-session-item.chat-active {
+  background: var(--chat-gradient-primary);
+  color: var(--chat-text-primary);
+  font-weight: var(--chat-font-weight-medium);
+  border-color: var(--chat-accent-peach);
+}
+
+/* Main Chat Area */
+.chat-main-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--chat-primary-bg);
+}
+
+/* Welcome Screen */
+.chat-welcome-screen {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+
+.chat-welcome-content {
+  text-align: center;
+  max-width: 500px;
+}
+
+.chat-welcome-title {
+  font-size: 48px;
+  font-weight: var(--chat-font-weight-bold);
+  color: var(--chat-text-primary);
+  margin-bottom: 16px;
+  background: var(--chat-gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.chat-welcome-subtitle {
+  font-size: 18px;
+  color: var(--chat-text-secondary);
+  margin-bottom: 40px;
+  font-weight: var(--chat-font-weight-regular);
+}
+
+.chat-welcome-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chat-suggestion-card {
+  padding: 16px 20px;
+  background: var(--chat-white);
+  border: 1px solid var(--chat-border-light);
+  border-radius: var(--chat-radius-md);
+  cursor: pointer;
+  transition: var(--chat-transition-fast);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  box-shadow: var(--chat-shadow-soft);
+}
+
+.chat-suggestion-card:hover {
+  background: var(--chat-gradient-subtle);
+  transform: translateY(-2px);
+  box-shadow: var(--chat-shadow-hover);
+}
+
+.chat-suggestion-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.chat-suggestion-text {
+  font-size: 14px;
+  color: var(--chat-text-secondary);
+  font-weight: var(--chat-font-weight-medium);
+}
+
+/* Messages Area */
+.chat-messages-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 120px);
+}
+
+.chat-messages-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--chat-border-light);
+  background: var(--chat-white);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: var(--chat-shadow-soft);
+}
+
+.chat-current-session-title {
+  font-size: 18px;
+  font-weight: var(--chat-font-weight-semibold);
+  color: var(--chat-text-primary);
+}
+
+.chat-delete-session-btn {
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--chat-error);
+  border: 1px solid var(--chat-border-light);
+  border-radius: var(--chat-radius-sm);
+  cursor: pointer;
+  transition: var(--chat-transition-fast);
+  font-size: 14px;
+}
+
+.chat-delete-session-btn:hover {
+  background: rgba(255, 107, 107, 0.1);
+  border-color: var(--chat-error);
+  transform: translateY(-1px);
+}
+
+.chat-messages-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.chat-message {
+  opacity: 0;
+  transform: translateY(20px);
+  animation: chat-fadeInUp 0.4s ease forwards;
+}
+
+@keyframes chat-fadeInUp {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chat-message-user {
+  align-self: flex-end;
+  max-width: 80%;
+}
+
+.chat-message-ai {
+  align-self: flex-start;
+  max-width: 80%;
+}
+
+.chat-message-content {
+  padding: 16px 20px;
+  border-radius: var(--chat-radius-lg);
+  font-size: 14px;
+  line-height: 1.5;
+  word-wrap: break-word;
+  box-shadow: var(--chat-shadow-soft);
+}
+
+.chat-message-user .chat-message-content {
+  background: var(--chat-gradient-primary);
+  color: var(--chat-text-primary);
+}
+
+.chat-message-ai .chat-message-content {
+  background: var(--chat-white);
+  color: var(--chat-text-secondary);
+  border: 1px solid var(--chat-border-light);
+}
+
+.chat-message-timestamp {
+  font-size: 11px;
+  color: var(--chat-text-light);
+  margin-top: 8px;
+  text-align: right;
+}
+
+.chat-message-ai .chat-message-timestamp {
+  text-align: left;
+}
+
+/* Typing Indicator */
+.chat-typing-indicator {
+  align-self: flex-start;
+  max-width: 80px;
+}
+
+.chat-typing-indicator .chat-message-content {
+  padding: 16px 20px;
+  background: var(--chat-white);
+  border: 1px solid var(--chat-border-light);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chat-typing-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--chat-accent-peach);
+  border-radius: 50%;
+  animation: chat-typingPulse 1.4s infinite ease-in-out;
+}
+
+.chat-typing-dot:nth-child(1) { animation-delay: -0.32s; }
+.chat-typing-dot:nth-child(2) { animation-delay: -0.16s; }
+.chat-typing-dot:nth-child(3) { animation-delay: 0s; }
+
+@keyframes chat-typingPulse {
+  0%, 80%, 100% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Input Area */
+.chat-input-area {
+  background: var(--chat-white);
+  border-top: 1px solid var(--chat-border-light);
+  padding: 20px 24px;
+  box-shadow: var(--chat-shadow-soft);
+}
+
+.chat-input-container {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.chat-input-wrapper {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  background: var(--chat-secondary-bg);
+  border: 1px solid var(--chat-border-light);
+  border-radius: var(--chat-radius-lg);
+  padding: 12px 16px;
+  transition: var(--chat-transition-fast);
+  box-shadow: var(--chat-shadow-soft);
+}
+
+.chat-input-wrapper:focus-within {
+  border-color: var(--chat-accent-peach);
+  box-shadow: 0 0 0 3px rgba(255, 214, 204, 0.1);
+}
+
+.chat-input-field {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-family: var(--chat-font-primary);
+  font-size: 14px;
+  color: var(--chat-text-primary);
+  resize: none;
+  outline: none;
+  max-height: 120px;
+  min-height: 20px;
+  line-height: 1.4;
+}
+
+.chat-input-field::placeholder {
+  color: var(--chat-text-light);
+}
+
+.chat-input-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-voice-btn, .chat-send-btn {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: var(--chat-radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--chat-transition-fast);
+  font-size: 16px;
+}
+
+.chat-voice-btn {
+  background: var(--chat-secondary-bg);
+  color: var(--chat-text-secondary);
+  border: 1px solid var(--chat-border-light);
+}
+
+.chat-voice-btn:hover {
+  background: var(--chat-gradient-subtle);
+  color: var(--chat-text-primary);
+  transform: translateY(-1px);
+}
+
+.chat-send-btn {
+  background: var(--chat-gradient-primary);
+  color: var(--chat-text-primary);
+  box-shadow: var(--chat-shadow-soft);
+}
+
+.chat-send-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--chat-shadow-hover);
+}
+
+.chat-send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: var(--chat-shadow-soft);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .chat-main-container {
+    flex-direction: column;
+  }
+  
+  .chat-sidebar {
+    width: 100%;
+    height: auto;
+    max-height: 200px;
+    order: 2;
+  }
+  
+  .chat-main-area {
+    order: 1;
+    height: calc(100vh - 200px);
+  }
+  
+  .chat-welcome-title {
+    font-size: 36px;
+  }
+  
+  .chat-welcome-subtitle {
+    font-size: 16px;
+  }
+  
+  .chat-message-user, .chat-message-ai {
+    max-width: 90%;
+  }
+}
+
+/* Utility Classes */
+.chat-hidden {
+  display: none !important;
+}
+
+.chat-show {
+  display: block !important;
+}
+
+.chat-fade-in {
+  animation: chat-fadeIn 0.3s ease forwards;
+}
+
+@keyframes chat-fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.chat-slide-up {
+  animation: chat-slideUp 0.4s ease forwards;
+}
+
+@keyframes chat-slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+</style>
+</head>
+<body>
+    <!-- Loading Warning Banner -->
+    <div class="chat-loading-banner" id="loadingBanner">
+        <div class="chat-banner-content">
+            <span class="chat-banner-icon">⚡</span>
+            <span class="chat-banner-text">The first chats may take a few seconds as our APIs wake up. Please wait.</span>
+        </div>
+    </div>
+
+    <!-- Voice Chat Warning Modal -->
+    <div class="chat-modal-overlay" id="voiceModal">
+        <div class="chat-modal">
+            <div class="chat-modal-header">
+                <h3 class="chat-modal-title">Voice Chat - Prototype</h3>
+            </div>
+            <div class="chat-modal-body">
+                <p class="chat-modal-text">Voice chat is currently a prototype. It may have delays and no voice modulation. These will be improved in later versions.</p>
+            </div>
+            <div class="chat-modal-footer">
+                <button class="chat-modal-btn" id="voiceModalOk">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Chat Container -->
+    <div class="chat-main-container">
+        <!-- Sidebar -->
+        <div class="chat-sidebar">
+            <div class="chat-sidebar-header">
+                <h2 class="chat-sidebar-title">MindHaven</h2>
+                <button class="chat-new-session-btn" id="newSessionBtn">
+                    <span class="chat-btn-icon">+</span>
+                    New Chat
+                </button>
+            </div>
+
+            <div class="chat-sessions-container">
+                <h3 class="chat-sessions-title">Your Conversations</h3>
+                <div class="chat-sessions-list" id="sessionsList">
+                    <!-- Sessions will be populated here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Area -->
+        <div class="chat-main-area">
+            <!-- Welcome Screen -->
+            <div class="chat-welcome-screen" id="welcomeScreen">
+                <div class="chat-welcome-content">
+                    <h1 class="chat-welcome-title">Welcome to MindHaven</h1>
+                    <p class="chat-welcome-subtitle">Your AI companion for meaningful conversations</p>
+                    <div class="chat-welcome-suggestions">
+                        <div class="chat-suggestion-card" data-suggestion="Tell me about mindfulness techniques">
+                            <span class="chat-suggestion-icon">🧘</span>
+                            <span class="chat-suggestion-text">Mindfulness techniques</span>
+                        </div>
+                        <div class="chat-suggestion-card" data-suggestion="How can I improve my mental wellness?">
+                            <span class="chat-suggestion-icon">💚</span>
+                            <span class="chat-suggestion-text">Mental wellness tips</span>
+                        </div>
+                        <div class="chat-suggestion-card" data-suggestion="I need someone to talk to">
+                            <span class="chat-suggestion-icon">💬</span>
+                            <span class="chat-suggestion-text">Just want to talk</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat Messages Area -->
+            <div class="chat-messages-area" id="messagesArea" style="display: none;">
+                <div class="chat-messages-header">
+                    <h2 class="chat-current-session-title" id="currentSessionTitle">New Chat</h2>
+                    <button class="chat-delete-session-btn" id="deleteSessionBtn">
+                        <span class="chat-btn-icon">🗑️</span>
+                    </button>
+                </div>
+                <div class="chat-messages-container" id="messagesContainer">
+                    <!-- Messages will be populated here -->
+                </div>
+            </div>
+
+            <!-- Input Area -->
+            <div class="chat-input-area">
+                <div class="chat-input-container">
+                    <div class="chat-input-wrapper">
+                        <textarea
+                            class="chat-input-field"
+                            id="messageInput"
+                            placeholder="Type your message here..."
+                            rows="1"
+                        ></textarea>
+                        <div class="chat-input-actions">
+                            <button class="chat-voice-btn" id="voiceBtn" title="Voice Chat">
+                                <span class="chat-btn-icon">🎤</span>
+                            </button>
+                            <button class="chat-send-btn" id="sendBtn">
+                                <span class="chat-btn-icon">→</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- No username modal anymore -->
+
+    <script>
+    // ===== MindHaven Chat JS (No class, user always 'defaultuser') =====
+
+    const MH_USER = localStorage.getItem('username');
+    const MH_API_BASE = "http://localhost:8001";
+
+    // State variables
+    let currentSessionId = null;
+    let currentSessionTitle = "New Chat";
+    let sessions = [];
+    let isRecording = false;
+    let mediaRecorder = null;
+    let audioChunks = [];
+
+    // DOM elements
+    let loadingBanner, voiceModal, voiceModalOk;
+    let welcomeScreen, messagesArea, sessionsList, messagesContainer, currentSessionTitleEl;
+    let messageInput, sendBtn, voiceBtn, newSessionBtn, deleteSessionBtn;
+
+    // On DOM load, initialize everything
+    document.addEventListener('DOMContentLoaded', function () {
+        // Elements
+        loadingBanner = document.getElementById('loadingBanner');
+        voiceModal = document.getElementById('voiceModal');
+        voiceModalOk = document.getElementById('voiceModalOk');
+        welcomeScreen = document.getElementById('welcomeScreen');
+        messagesArea = document.getElementById('messagesArea');
+        sessionsList = document.getElementById('sessionsList');
+        messagesContainer = document.getElementById('messagesContainer');
+        currentSessionTitleEl = document.getElementById('currentSessionTitle');
+        messageInput = document.getElementById('messageInput');
+        sendBtn = document.getElementById('sendBtn');
+        voiceBtn = document.getElementById('voiceBtn');
+        newSessionBtn = document.getElementById('newSessionBtn');
+        deleteSessionBtn = document.getElementById('deleteSessionBtn');
+
+        // Show loading
+        showLoadingBanner();
+
+        // Event bind
+        voiceModalOk.addEventListener('click', hideVoiceModal);
+        sendBtn.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+        messageInput.addEventListener('input', adjustTextareaHeight);
+
+        voiceBtn.addEventListener('click', handleVoiceChat);
+
+        newSessionBtn.addEventListener('click', createNewSession);
+        deleteSessionBtn.addEventListener('click', deleteCurrentSession);
+
+        // Suggestion clicks
+        document.addEventListener('click', function (e) {
+            const card = e.target.closest('.chat-suggestion-card');
+            if (card) {
+                handleSuggestionClick(card.dataset.suggestion);
+            }
+        });
+
+        // Modal click-out
+        voiceModal.addEventListener('click', function (e) {
+            if (e.target === voiceModal) hideVoiceModal();
+        });
+
+        // Load sessions
+        loadUserSessions();
+    });
+
+    // ==== Modal Management
+    function showLoadingBanner() {
+        loadingBanner.classList.add('chat-show');
+        setTimeout(() => {
+            loadingBanner.classList.remove('chat-show');
+        }, 4000);
+    }
+    function showVoiceModal() {
+        voiceModal.classList.add('chat-show');
+    }
+    function hideVoiceModal() {
+        voiceModal.classList.remove('chat-show');
+    }
+
+    // ==== Session Management
+    function loadUserSessions() {
+        fetch(`${MH_API_BASE}/${MH_USER}/all_sessions`)
+            .then(response => {
+                if (!response.ok) throw new Error('User not found');
+                return response.json();
+            })
+            .then(data => {
+                sessions = (data.session_ids || []).map((id, i) => ({
+                    id, name: (data.chat_names && data.chat_names[i]) ? data.chat_names[i] : "Untitled Chat"
+                }));
+                renderSessions();
+                switchToWelcomeMode();
+            })
+            .catch(err => {
+                sessions = [];
+                renderSessions();
+                switchToWelcomeMode();
+            });
+    }
+
+    function renderSessions() {
+        sessionsList.innerHTML = '';
+        sessions.forEach(session => {
+            const el = document.createElement('div');
+            el.className = 'chat-session-item';
+            el.textContent = session.name;
+            el.dataset.sessionId = session.id;
+            if (session.id === currentSessionId) {
+                el.classList.add('chat-active');
+            }
+            el.addEventListener('click', function () {
+                switchToSession(session.id, session.name);
+            });
+            sessionsList.appendChild(el);
+        });
+    }
+
+    function createNewSession() {
+        fetch(`${MH_API_BASE}/${MH_USER}/new_session`, { method: 'POST' })
+            .then(response => {
+                if (!response.ok) throw new Error('Failed to create new session');
+                return response.json();
+            })
+            .then(data => {
+                currentSessionId = data.session_id;
+                currentSessionTitle = "New Chat";
+                switchToMessagingMode();
+                clearMessages();
+                updateCurrentSessionTitle();
+            })
+            .catch(err => showError('Failed to create new session'));
+    }
+
+    function switchToSession(sessionId, sessionName) {
+        currentSessionId = sessionId;
+        currentSessionTitle = sessionName;
+        switchToMessagingMode();
+        updateCurrentSessionTitle();
+        loadSessionMessages();
+        renderSessions();
+    }
+
+    function loadSessionMessages() {
+        fetch(`${MH_API_BASE}/${MH_USER}/${currentSessionId}/messages`)
+            .then(response => response.ok ? response.json() : { messages: [] })
+            .then(data => displayMessages(data.messages || []))
+            .catch(() => displayMessages([]));
+    }
+
+    function deleteCurrentSession() {
+        if (!currentSessionId) return;
+        if (!confirm('Are you sure you want to delete this chat?')) return;
+        fetch(`${MH_API_BASE}/delete_chat/${MH_USER}/${currentSessionId}`, { method: 'DELETE' })
+            .then(response => {
+                if (!response.ok) throw new Error('Failed to delete session');
+                return response.json();
+            })
+            .then(() => {
+                loadUserSessions();
+                switchToWelcomeMode();
+                currentSessionId = null;
+                currentSessionTitle = "New Chat";
+            })
+            .catch(() => showError('Failed to delete session'));
+    }
+
+    // ==== Interface Management
+    function switchToWelcomeMode() {
+        welcomeScreen.style.display = 'flex';
+        messagesArea.style.display = 'none';
+        currentSessionId = null;
+    }
+    function switchToMessagingMode() {
+        welcomeScreen.style.display = 'none';
+        messagesArea.style.display = 'flex';
+        messageInput.focus();
+    }
+    function updateCurrentSessionTitle() {
+        currentSessionTitleEl.textContent = currentSessionTitle;
+    }
+
+    // ==== Message Handling
+    function sendMessage() {
+        const message = messageInput.value.trim();
+        if (!message) return;
+
+        // If no session, create one, then send after it's set
+        if (!currentSessionId) {
+            createNewSession();
+            // Wait a tick then retry sending (primitive but works for single-thread UI)
+            setTimeout(sendMessage, 400);
+            return;
+        }
+
+        switchToMessagingMode();
+        addMessageToUI(message, 'user');
+        messageInput.value = '';
+        adjustTextareaHeight();
+        showTypingIndicator();
+
+        // API: POST /{user_name}/{session_id}/chat, form: user_prompt
+        const formData = new FormData();
+        formData.append('user_prompt', message);
+
+        fetch(`${MH_API_BASE}/${MH_USER}/${currentSessionId}/chat`, {
+            method: 'POST',
+            body: formData
+        })
+            .then(response => {
+                if (!response.ok) throw new Error('Failed to send message');
+                return response.json();
+            })
+            .then(data => {
+                hideTypingIndicator();
+                addMessageToUI(data.response, 'ai');
+                // Update session name on first message (new chat)
+                if (currentSessionTitle === "New Chat") {
+                    loadUserSessions();
+                    setTimeout(() => {
+                        const cur = sessions.find(s => s.id === currentSessionId);
+                        if (cur) {
+                            currentSessionTitle = cur.name;
+                            updateCurrentSessionTitle();
+                        }
+                        renderSessions();
+                    }, 500);
+                }
+            })
+            .catch(() => {
+                hideTypingIndicator();
+                addMessageToUI('Sorry, I encountered an error. Please try again.', 'ai');
+            });
+    }
+
+    function handleSuggestionClick(suggestion) {
+        messageInput.value = suggestion;
+        sendMessage();
+    }
+
+    function addMessageToUI(content, type) {
+        const div = document.createElement('div');
+        div.className = `chat-message chat-message-${type}`;
+        const cont = document.createElement('div');
+        cont.className = 'chat-message-content';
+        cont.textContent = content;
+        const ts = document.createElement('div');
+        ts.className = 'chat-message-timestamp';
+        ts.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        div.appendChild(cont);
+        div.appendChild(ts);
+        messagesContainer.appendChild(div);
+        scrollToBottom();
+    }
+
+    function displayMessages(messages) {
+        messagesContainer.innerHTML = '';
+        messages.forEach(msg => {
+            addMessageToUI(msg.user_message, 'user');
+            addMessageToUI(msg.ai_message, 'ai');
+        });
+    }
+
+    function clearMessages() {
+        messagesContainer.innerHTML = '';
+    }
+
+    function showTypingIndicator() {
+        const typingDiv = document.createElement('div');
+        typingDiv.className = 'chat-message chat-typing-indicator';
+        typingDiv.id = 'typingIndicator';
+        const typingContent = document.createElement('div');
+        typingContent.className = 'chat-message-content';
+        for (let i = 0; i < 3; i++) {
+            const dot = document.createElement('div');
+            dot.className = 'chat-typing-dot';
+            typingContent.appendChild(dot);
+        }
+        typingDiv.appendChild(typingContent);
+        messagesContainer.appendChild(typingDiv);
+        scrollToBottom();
+    }
+
+    function hideTypingIndicator() {
+        const typing = document.getElementById('typingIndicator');
+        if (typing) typing.remove();
+    }
+
+    function scrollToBottom() {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+    function adjustTextareaHeight() {
+        messageInput.style.height = 'auto';
+        messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
+    }
+
+    // ==== Voice Chat
+    function handleVoiceChat() {
+        if (!isRecording) {
+            showVoiceModal();
+        } else {
+            stopRecording();
+        }
+    }
+
+    function startRecording() {
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(stream => {
+                mediaRecorder = new window.MediaRecorder(stream);
+                audioChunks = [];
+                mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                    sendVoiceMessage(audioBlob);
+                    stream.getTracks().forEach(track => track.stop());
+                };
+                mediaRecorder.start();
+                isRecording = true;
+                voiceBtn.textContent = '⏹️';
+                voiceBtn.style.background = 'var(--chat-error)';
+            })
+            .catch(() => showError('Could not access microphone'));
+    }
+
+    function stopRecording() {
+        if (mediaRecorder && isRecording) {
+            mediaRecorder.stop();
+            isRecording = false;
+            voiceBtn.innerHTML = '<span class="chat-btn-icon">🎤</span>';
+            voiceBtn.style.background = '';
+        }
+    }
+
+    function sendVoiceMessage(audioBlob) {
+        if (!currentSessionId) {
+            createNewSession();
+            setTimeout(() => sendVoiceMessage(audioBlob), 500);
+            return;
+        }
+        switchToMessagingMode();
+        showTypingIndicator();
+
+        const formData = new FormData();
+        formData.append('file', audioBlob, 'audio.wav');
+        fetch(`${MH_API_BASE}/${MH_USER}/${currentSessionId}/chat/voice`, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => {
+            hideTypingIndicator();
+            if (!response.ok) throw new Error("Voice chat failed");
+            return response.blob();
+        })
+        .then(audioBlobResp => {
+            const audioUrl = URL.createObjectURL(audioBlobResp);
+            const audio = new window.Audio(audioUrl);
+            addVoiceMessageToUI('Voice message sent', 'user');
+            addVoiceMessageToUI('Voice response received', 'ai', audioUrl);
+            audio.play().catch(() => {});
+            // Update session list if new
+            if (currentSessionTitle === "New Chat") {
+                loadUserSessions();
+                setTimeout(() => {
+                    const cur = sessions.find(s => s.id === currentSessionId);
+                    if (cur) {
+                        currentSessionTitle = cur.name;
+                        updateCurrentSessionTitle();
+                    }
+                    renderSessions();
+                }, 500);
+            }
+        })
+        .catch(() => {
+            hideTypingIndicator();
+            addMessageToUI('Sorry, voice chat failed. Please try again.', 'ai');
+        });
+    }
+
+    function addVoiceMessageToUI(content, type, audioUrl = null) {
+        const div = document.createElement('div');
+        div.className = `chat-message chat-message-${type}`;
+        const cont = document.createElement('div');
+        cont.className = 'chat-message-content';
+        if (audioUrl) {
+            const audioEl = document.createElement('audio');
+            audioEl.controls = true;
+            audioEl.src = audioUrl;
+            audioEl.style.width = '100%';
+            audioEl.style.maxWidth = '300px';
+            cont.appendChild(audioEl);
+        } else {
+            const voiceIcon = document.createElement('span');
+            voiceIcon.textContent = '🎤 ';
+            voiceIcon.style.marginRight = '8px';
+            cont.appendChild(voiceIcon);
+            cont.appendChild(document.createTextNode(content));
+        }
+        const ts = document.createElement('div');
+        ts.className = 'chat-message-timestamp';
+        ts.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        div.appendChild(cont);
+        div.appendChild(ts);
+        messagesContainer.appendChild(div);
+        scrollToBottom();
+    }
+
+    // ======= Utility
+    function showError(msg) {
+        alert(msg);
+    }
+
+    // Expose startRecording to modal OK (for voice)
+    voiceModalOk.addEventListener('click', function() {
+        hideVoiceModal();
+        if (!isRecording) {
+            startRecording();
+        }
+    });
+
+    </script>
+</body>
+</html>

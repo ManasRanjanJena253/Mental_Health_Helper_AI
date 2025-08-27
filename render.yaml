@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: mental-health-api
+    env: python
+    plan: free
+    buildCommand: |
+      git lfs install
+      git lfs pull
+      pip install -r backend/requirements.txt
+    startCommand: uvicorn main.apis:app --host 0.0.0.0 --port 10000
+    envVars:
+      - key: MONGO_URI
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+
+#sync: false → means you’ll enter the actual values in Render’s dashboard, not commit them in the file.
+#The git lfs pull step ensures your Mental_Health_Remedies and Mental_Health_Taboos_in_India vector DBs are downloaded during deployment.
+#startCommand assumes your FastAPI app object is in backend/main/apis.py.

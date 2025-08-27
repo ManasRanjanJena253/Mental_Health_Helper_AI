@@ -1,6 +1,6 @@
 import shutil
 import uvicorn
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.exceptions import HTTPException
 import uuid
 import os
@@ -57,7 +57,7 @@ model_runner_cache = {}
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # list of origins; use ["*"] to allow all
+    allow_origins=["*"],  # list of origins; use ["*"] to allow all, need to change it to the url of frontend to make it secure, later after getting shortlisted.
     allow_credentials=True,
     allow_methods=["*"],  # allow all HTTP methods
     allow_headers=["*"],  # allow all headers
@@ -125,7 +125,7 @@ def get_model_runner(user_name: str) -> RunModel:
 
 
 @app.post("/sign_in")
-async def sign_in(user_name: str, password: str):
+async def sign_in(user_name: str = Form(...), password: str = Form(...)):
     """
     API endpoint for user registration.
     :param user_name: Name of the user.
@@ -165,7 +165,7 @@ async def sign_in(user_name: str, password: str):
 
 
 @app.post("/login")
-async def login(user_name: str, password: str):
+async def login(user_name: str = Form(...), password: str = Form(...)):
     """
     API endpoint for authorising the login.
     :param user_name: The name of the user.
@@ -184,7 +184,8 @@ async def login(user_name: str, password: str):
         raise HTTPException(status_code = 401,
                             detail = "Invalid credentials !!! \n Plz Sign in First OR Check the Credentials.")
 
-    return {"login_status": "Successful"}
+    return {"login_status": "Successful",
+            "user_name": user_name}
 
 
 @app.get("/{user_name}/all_sessions")
@@ -264,7 +265,7 @@ async def new_session(user_name: str):
 
 
 @app.post("/{user_name}/{session_id}/chat")
-async def chat(user_prompt: str, session_id: str, user_name: str):
+async def chat(session_id: str, user_name: str, user_prompt: str = Form(...)):
     """
     API endpoint which enables user to interact with the llm.
     :param user_prompt: The query of the user.
