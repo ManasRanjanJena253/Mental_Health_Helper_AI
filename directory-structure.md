@@ -1,8 +1,8 @@
 # Project Directory Structure
 
-*Generated: 2025-08-25 19:09:10*
+*Generated: 2025-08-27 15:28:38*
 
-Summary: 19 directories, 56 files, 5 Python files
+Summary: 17 directories, 52 files, 5 Python files
 
 ```
 Mental_Health_AI/
@@ -20,13 +20,11 @@ Mental_Health_AI/
 │   │   ├── Mental_Health_Remedies
 │   │   │   ├── 379932df-a40c-4cf7-97f6-3930c108c162
 │   │   ├── Mental_Health_Taboos_in_India
-│   │   │   ├── 8b58dca7-3f66-4897-9265-7a74b4a519aa
+│   │   │   ├── d4cea587-30c1-4e0a-8154-873ead4b2331
 │   │   ├── apis.py
 │   │   ├── chat_runner.py
 │   │   └── voice_bridge.py
 │   └── vector_embeddings
-│       ├── Yoga_And_Exercises_For_Mental_Health
-│       │   ├── 4b056ca2-8fde-4458-bcb1-4a661e43cd40
 │       ├── create_vector_embeddings.py
 ├── frontend
 ```

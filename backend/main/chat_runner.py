@@ -64,7 +64,7 @@ class RunModel:
 
         remedies_retrieved = self.remedies_vector_store.max_marginal_relevance_search(query = user_prompt,
                                                                                     k = 3,
-                                                                                    fetch_k = 25)
+                                                                                    fetch_k = 20)
         remedies_context = "\n\n".join(doc.page_content for doc in remedies_retrieved)
 
         # remedies_context = self.remedies_vector_store.query(query_texts = [user_prompt],
@@ -72,7 +72,7 @@ class RunModel:
 
         taboo_retrieved = self.indian_taboo_vector_store.max_marginal_relevance_search(query = user_prompt,
                                                                                      k = 3,
-                                                                                     fetch_k = 25)
+                                                                                     fetch_k = 20)
 
         taboo_details = "\n\n".join(doc.page_content for doc in taboo_retrieved)
 
@@ -101,7 +101,8 @@ class RunModel:
              "Background context:\n"
 
              "1. The therapist’s knowledge:\n{remedies_context}\n\n"
-             "All these contexts are only for making your answers more reliable, you still need to change your vocab to be soothing and not just be a bookish informatic model."),
+             "All these contexts are only for making your answers more reliable, you still need to change your vocab to be soothing and not just be a bookish informatic model."
+             "And besides giving the best possible solutions and help also keep asking proactive questions so, the user can vent out and feel heard."),
             ("user", "{query}")
         ])
 
@@ -146,14 +147,14 @@ class RunModel:
 
         remedies_context = self.remedies_vector_store.max_marginal_relevance_search(query = user_prompt,
                                                                                     k = 3,
-                                                                                    fetch_k = 25)
+                                                                                    fetch_k = 20)
 
         # remedies_context = self.remedies_vector_store.query(query_texts = [user_prompt],
         #                                                     n_results = 5)
 
         taboo_details = self.indian_taboo_vector_store.max_marginal_relevance_search(query = user_prompt,
                                                                                      k = 3,
-                                                                                     fetch_k = 25)
+                                                                                     fetch_k = 20)
 
         # taboo_details = self.indian_taboo_vector_store.query(query_texts = [user_prompt],
         #                                                      n_results = 5)
@@ -191,7 +192,8 @@ class RunModel:
              "Background context:\n"
              "1. The therapist’s knowledge:\n{remedies_context}\n\n"
              "2. Past conversation with the client:\n{retrieved_memory}\n\n"
-             "All these contexts are only for making your answers more reliable, you still need to change your vocab to be soothing and not just be a bookish informatic model."),
+             "All these contexts are only for making your answers more reliable, you still need to change your vocab to be soothing and not just be a bookish informatic model."
+             "And besides giving the best possible solutions and help also keep asking proactive questions so, the user can vent out and feel heard."),
 
             ("user", "{query}")
         ])

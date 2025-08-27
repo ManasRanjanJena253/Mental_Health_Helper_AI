@@ -168,27 +168,17 @@ responsibility is to help the user.
 
 # -------- Example usage --------
 if __name__ == "__main__":
-    """
-    One-time (or occasional) indexing:
-        python optimized_rag_chroma.py  # runs the example below
-
-    At runtime for chat:
-        rag = RAGIndex("mentalhealthtaboosinindia", persist_dir="./chroma_store")
-        print(rag.answer("I am feeling really depressed and lonely."))
-    """
     load_dotenv()
 
     rag = RAGIndex(
         collection_name = "mentalhealthtaboosinindia",
         persist_dir ="../main/Mental_Health_Taboos_in_India",
-        # For latest Google embeddings via LangChain wrapper, "gemini-embedding-001" is a stable choice.
-        # If your langchain_google_genai supports it, you can try: embedding_model="text-embedding-004"
         chunk_size = 1500,
         chunk_overlap = 150,
     )
 
     # Index (set rebuild_collection=True the first time or when PDFs change substantially)
-    n = rag.index_pdf("Mental_Health_in_India_Taboos_Report_2025.pdf", rebuild_collection = True)
+    n = rag.index_pdf("Mental_Health_Taboos_and_Issues_India_Compiled.pdf", rebuild_collection = True)
     print(f"Indexed {n} chunks.")
 
     # Ask something
