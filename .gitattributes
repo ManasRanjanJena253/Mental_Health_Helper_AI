@@ -1,3 +1,2 @@
-backend/vector_embeddings/Mental_Health_Remedies filter=lfs diff=lfs merge=lfs -text
-backend/vector_embeddings/Mental_Health_Taboos_In_India filter=lfs diff=lfs merge=lfs -text
-backend/vector_embeddings/Mental_Health_Taboos_In_India/*.bin filter=lfs diff=lfs merge=lfs -text
+backend/main/Mental_Health_Remedies/** filter=lfs diff=lfs merge=lfs -text
+backend/main/Mental_Health_Taboos_In_India/** filter=lfs diff=lfs merge=lfs -text
