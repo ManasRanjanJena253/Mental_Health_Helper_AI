@@ -5,6 +5,7 @@ services:
     env: python
     plan: free
     buildCommand: |
+      apt-get update && apt-get install -y git-lfs
       git lfs install
       git lfs pull
       pip install -r backend/requirements.txt
