@@ -1,9 +1,10 @@
 services:
   - type: web
+    runtime: python
     name: mental-health-api
     env: python
     plan: free
-    pythonVersion: 3.12
+    pythonVersion: 3.12.11
     buildCommand: |
       git lfs install
       git lfs pull
