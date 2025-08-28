@@ -1,6 +1,6 @@
 # Project Directory Structure
 
-*Generated: 2025-08-27 20:23:52*
+*Generated: 2025-08-28 15:00:43*
 
 Summary: 20 directories, 75 files, 5 Python files
 
@@ -28,6 +28,6 @@ Mental_Health_AI/
 │   │   └── voice_bridge.py
 │   └── vector_embeddings
 │       ├── create_vector_embeddings.py
-├── frontend
+├── docs
 │   ├── images
 ```
