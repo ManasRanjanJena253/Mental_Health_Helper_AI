@@ -3,6 +3,7 @@ services:
     name: mental-health-api
     env: python
     plan: free
+    pythonVersion: 3.12
     buildCommand: |
       git lfs install
       git lfs pull
