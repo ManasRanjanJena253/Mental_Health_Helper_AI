@@ -1,8 +1,8 @@
 # Project Directory Structure
 
-*Generated: 2025-08-28 15:03:44*
+*Generated: 2025-08-29 07:24:12*
 
-Summary: 20 directories, 75 files, 5 Python files
+Summary: 20 directories, 77 files, 5 Python files
 
 ```
 Mental_Health_AI/
@@ -26,8 +26,8 @@ Mental_Health_AI/
 │   │   ├── apis.py
 │   │   ├── chat_runner.py
 │   │   └── voice_bridge.py
-│   └── vector_embeddings
-│       ├── create_vector_embeddings.py
+│   ├── vector_embeddings
+│   │   ├── create_vector_embeddings.py
 ├── docs
 │   ├── images
 ```
