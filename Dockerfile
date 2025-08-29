@@ -19,6 +19,7 @@ COPY . .
 
 # Install Python dependencies
 RUN pip install --upgrade pip setuptools wheel
+RUN pip install langchain-chroma
 RUN pip install --no-cache-dir -r backend/requirements.txt
 
 # Expose port for Render

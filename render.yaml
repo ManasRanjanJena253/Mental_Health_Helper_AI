@@ -9,7 +9,7 @@ services:
       git lfs install
       git lfs pull
       pip install -r backend/requirements.txt
-    startCommand: uvicorn main.apis:app --host 0.0.0.0 --port 10000
+    startCommand: uvicorn backend.main.apis:app --host 0.0.0.0 --port 10000
     envVars:
       - key: MONGO_URI
         sync: false
