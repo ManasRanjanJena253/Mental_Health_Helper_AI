@@ -5,6 +5,8 @@ python-dotenv~=1.1.1
 uvicorn~=0.35.0
 fastapi~=0.116.1
 langchain-google-genai~=2.1.9
+langchain-community
+langchain-chroma
 passlib~=1.7.4
 cryptography~=45.0.6
 chromadb~=1.0.17

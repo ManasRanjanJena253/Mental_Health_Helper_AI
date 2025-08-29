@@ -1,11 +1,8 @@
 import os
-from dataclasses import dataclass
 from typing import Optional, Tuple, List, Iterable
 import warnings
 import whisper
 from dotenv import load_dotenv
-import playsound
-from google.cloud import speech
 from elevenlabs import ElevenLabs, VoiceSettings
 from gtts import gTTS
 import io
