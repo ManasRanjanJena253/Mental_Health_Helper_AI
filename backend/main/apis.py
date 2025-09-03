@@ -12,7 +12,7 @@ from passlib.hash import bcrypt
 from fastapi.middleware.cors import CORSMiddleware
 from cryptography.fernet import Fernet
 from motor.motor_asyncio import AsyncIOMotorClient
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 from fastapi.responses import StreamingResponse
 
@@ -333,7 +333,7 @@ async def chat(session_id: str, user_name: str, user_prompt: str = Form(...)):
         message_obj = {
             "user_message": encrypted_user_message,
             "ai_message": encrypted_ai_message,
-            "timestamp": datetime.utcnow()
+            "timestamp": datetime.now(UTC)
         }
 
         # Find session index and update the specific chat array
@@ -539,7 +539,7 @@ async def voice_chat(session_id: str, user_name: str, file: UploadFile = File(..
         message_obj = {
             "user_message": encrypted_user_message,
             "ai_message": encrypted_ai_message,
-            "timestamp": datetime.utcnow()
+            "timestamp": datetime.now(UTC)
         }
 
         # Find session index and update the specific chat array
