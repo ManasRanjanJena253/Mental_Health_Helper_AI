@@ -1,576 +1,498 @@
-import shutil
-import uvicorn
-from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.exceptions import HTTPException
-import uuid
+"""
+apis.py
+~~~~~~~
+FastAPI application — refactored with:
+  - JWT authentication on all protected endpoints
+  - Redis-backed RunModel cache (in-process TTLCache, Redis for persistence)
+  - SSE streaming on /chat  (tokens arrive at the frontend as they generate)
+  - All sync blocking calls moved to run_in_executor (event loop never blocked)
+  - Voice temp files use uuid names to prevent collision under concurrency
+  - Rate limiting on /chat and /voice endpoints
+"""
+
+import asyncio
+import json
 import os
-from langchain_google_genai import ChatGoogleGenerativeAI
-from dotenv import load_dotenv
-from pymongo.server_api import ServerApi
-from backend.main.chat_runner import RunModel
-from passlib.hash import bcrypt
-from fastapi.middleware.cors import CORSMiddleware
-from cryptography.fernet import Fernet
-from motor.motor_asyncio import AsyncIOMotorClient
+import shutil
+import uuid
 from datetime import datetime, UTC
-from typing import Optional
+from functools import partial
+from typing import Optional, AsyncIterator
+
+import uvicorn
+from cryptography.fernet import Fernet
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from motor.motor_asyncio import AsyncIOMotorClient
+from passlib.hash import bcrypt
+from pymongo.server_api import ServerApi
+from langchain_google_genai import ChatGoogleGenerativeAI
 
-########################################################################################################################################################################
-# How bcrypt Works (Step by Step)
-# User chooses a password, e.g. "mypassword123".
-# Generate a salt (random string, usually 128 bits).
-# Example salt: "a8f5f167f44f4964e6c998dee827110c".
-# This ensures that even if two users have the same password, their hashes are different.
-# Password + Salt → Key Expansion & Hashing
-# bcrypt uses the Blowfish cipher internally.
-# It runs the password through multiple expensive rounds of encryption + mixing with the salt.
-# Cost Factor (Work Factor)
-# bcrypt has a tunable parameter called cost (also called "rounds").
-# Example: cost = 12 → means the hashing function runs 2^12 = 4096 iterations internally.
-# Higher cost = more secure but slower.
-# Final Hash Stored
-# bcrypt outputs a hash like this (60 characters):
-# $2b$12$eImiTXuWVxfM37uY4JANjQ==.r9pT7hJ7W0mTgk0U1fM/6Jb5PScq
-# Format breakdown:
-# $2b$ → bcrypt version
-# 12 → cost factor (work factor)
-# Next 22 chars → salt
-# Last part → actual hashed password
-#########################################################################################################################################################################
-
-# Using bcrypt for passwords because they can't be decrypted.
-# Using encryption for storing chat_names.
+# Local modules
+from auth import (
+    TokenPair,
+    assert_owns_resource,
+    create_token_pair,
+    get_current_user,
+    verify_refresh_token,
+)
+from redis_client import (
+    check_rate_limit,
+    close_redis,
+    evict_runner,
+    fetch_runner_db_name,
+    get_cached_runner,
+    persist_runner_db_name,
+    redis_ping,
+    set_cached_runner,
+)
+from chat_runner import RunModel
 
 load_dotenv()
 
+# App + DB setup
+
 uri = os.getenv("MONGO_URI")
-app = FastAPI()
+app = FastAPI(title="MindHaven API", version="2.0.0")
 
-client = AsyncIOMotorClient(uri, server_api = ServerApi("1"))
-db_name = "Mental_Health_AI_User_Database"
-db = client[db_name]
+mongo_client = AsyncIOMotorClient(uri, server_api=ServerApi("1"))
+db = mongo_client["Mental_Health_AI_User_Database"]
 collection = db["user_data"]
-
-# Initialize RunModel once to avoid repeated instantiation
-model_runner_cache = {}
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # list of origins; use ["*"] to allow all, need to change it to the url of frontend to make it secure, later after getting shortlisted.
+    allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
     allow_credentials=True,
-    allow_methods=["*"],  # allow all HTTP methods
-    allow_headers=["*"],  # allow all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
+# Lifecycle events
+@app.on_event("startup")
+async def startup():
+    ok = await redis_ping()
+    if not ok:
+        raise RuntimeError("Redis is unreachable — check REDIS_URL in .env")
 
-def create_chat_name(user_prompt: str) -> str:
+
+@app.on_event("shutdown")
+async def shutdown():
+    await close_redis()
+    mongo_client.close()
+
+
+# Internal helpers
+def _get_or_create_runner(user_name: str) -> RunModel:
     """
-    Used to create the name of the chat.
-    :return: The name of the chat.
+    Return a cached RunModel for user_name, creating it on a cache miss.
+    This is synchronous and designed to be called via run_in_executor.
     """
+    runner = get_cached_runner(user_name)
+    if runner is None:
+        db_name = f"VectorDB_{user_name}"
+        runner = RunModel(db_name=db_name)
+        set_cached_runner(user_name, runner)
+    return runner
+
+
+async def _get_runner(user_name: str) -> RunModel:
+    """Async wrapper: checks in-process cache, then Redis, then constructs."""
+    runner = get_cached_runner(user_name)
+    if runner is not None:
+        return runner
+
+    # Try to recover db_name from Redis (survives process restarts)
+    db_name = await fetch_runner_db_name(user_name) or f"VectorDB_{user_name}"
+
+    loop = asyncio.get_event_loop()
+    runner = await loop.run_in_executor(None, partial(RunModel, db_name=db_name))
+    set_cached_runner(user_name, runner)
+    # Persist db_name so the next cold start can find it
+    await persist_runner_db_name(user_name, db_name)
+    return runner
+
+
+def _create_chat_name_sync(user_prompt: str) -> str:
+    """Sync LLM call to generate a chat title — run in executor."""
     llm = ChatGoogleGenerativeAI(
         model="gemini-2.0-flash",
         google_api_key=os.getenv("GOOGLE_API_KEY"),
-        verbose=True,
-        temperature=0.3
+        temperature=0.3,
     )
     response = llm.invoke(
-        f"This is the prompt given by the user : {user_prompt} \n, provide a suitable title for the chat related to this prompt. Provide only the title, \
-                          No unnecessary greetings or verbose messages."
+        f"This is the prompt given by the user: {user_prompt}\n"
+        "Provide a suitable short title for this chat. "
+        "Only the title — no greetings, no extra text."
     )
     return response.content
 
 
-async def authenticate_user(user_name: str, password: str):
-    """
-    Used for checking if the user is a registered user or not.
-    :param user_name: Name of the user.
-    :param password: Password of the user.
-    :return: Boolean verification,
-    """
-    try:
-        stored = await collection.find_one({"user_name": user_name}, {"_id": 0, "password": 1})
-        if not stored:
-            return False
-        return bcrypt.verify(password, stored["password"])  # Verifying the password.
-    except Exception:
-        return False
-
-
-def validate_password(password: str):
-    """
-    Validate password strength.
-    :param password: Password to validate
-    :return: Tuple of (is_valid, error_message)
-    """
+def validate_password(password: str) -> tuple[bool, str]:
     if len(password) < 8:
-        return False, "Password must be at least 8 characters long"
+        return False, "Password must be at least 8 characters long."
     if not any(c.isdigit() for c in password):
-        return False, "Password must contain at least one digit"
+        return False, "Password must contain at least one digit."
     if not any(c.isalpha() for c in password):
-        return False, "Password must contain at least one letter"
+        return False, "Password must contain at least one letter."
     return True, ""
 
 
-def get_model_runner(user_name: str) -> RunModel:
-    """
-    Get or create a cached RunModel instance for a user.
-    :param user_name: Name of the user
-    :return: RunModel instance
-    """
-    if user_name not in model_runner_cache:
-        model_runner_cache[user_name] = RunModel(db_name=f"VectorDB_{user_name}")
-    return model_runner_cache[user_name]
+async def _get_user_or_404(user_name: str) -> dict:
+    doc = await collection.find_one({"user_name": user_name})
+    if not doc:
+        raise HTTPException(status_code=404, detail="User not found.")
+    return doc
+
+
+async def _get_cipher(user_name: str) -> tuple[dict, Fernet]:
+    doc = await _get_user_or_404(user_name)
+    key = doc.get("encryption_key")
+    if not key:
+        raise HTTPException(status_code=500, detail="Encryption key missing.")
+    return doc, Fernet(key)
+
+
+# Public endpoints  (no JWT required)
+@app.get("/health")
+async def health():
+    redis_ok = await redis_ping()
+    return {"status": "ok", "redis": redis_ok}
 
 
 @app.post("/sign_in")
 async def sign_in(user_name: str = Form(...), password: str = Form(...)):
-    """
-    API endpoint for user registration.
-    :param user_name: Name of the user.
-    :param password: Password of the user.
-    :return: Confirmation message.
-    """
-    # Checking if the user already exists
-    data = await collection.find_one({"user_name": user_name})
-    if data:
-        raise HTTPException(status_code = 409, detail="User with this user_name already exists.")
+    """Register a new user."""
+    existing = await collection.find_one({"user_name": user_name})
+    if existing:
+        raise HTTPException(status_code=409, detail="Username already taken.")
 
-    # Validating password strength
-    is_valid, error_msg = validate_password(password)
+    is_valid, err = validate_password(password)
     if not is_valid:
-        raise HTTPException(status_code = 400, detail = error_msg)
+        raise HTTPException(status_code=400, detail=err)
 
-    # Generating an encryption key and hash password
+    loop = asyncio.get_event_loop()
+    hashed = await loop.run_in_executor(None, partial(bcrypt.hash, password))
     key = Fernet.generate_key()
-    hashed_password = bcrypt.hash(password)  # Using hashed password for extra safety.
 
-    # Creating user document
-    user_doc = {
+    await collection.insert_one({
         "user_name": user_name,
-        "password": hashed_password,
+        "password": hashed,
         "encryption_key": key,
         "session_ids": [],
         "chat_names": [],
         "chats": [],
-        "created_at": datetime.utcnow()
-    }
+        "created_at": datetime.now(UTC),
+    })
 
-    try:
-        await collection.insert_one(user_doc)
-        return {"confirmation": "Signed In Successfully. Proceed to Login"}
-    except Exception as e:
-        raise HTTPException(status_code = 500, detail = f"Failed to create user: {str(e)}")
+    return {"detail": "Account created. Please log in."}
 
 
-@app.post("/login")
+@app.post("/login", response_model=TokenPair)
 async def login(user_name: str = Form(...), password: str = Form(...)):
-    """
-    API endpoint for authorising the login.
-    :param user_name: The name of the user.
-    :param password: The password of the user.
-    :return: The confirmation message.
-    """
-    # Check if user exists
-    user = await collection.find_one({"user_name": user_name})
-    if not user:
-        raise HTTPException(status_code = 401,
-                            detail = "Invalid credentials !!! \n Plz Sign in First OR Check the Credentials.")
+    """Authenticate and return a JWT access + refresh token pair."""
+    doc = await collection.find_one({"user_name": user_name}, {"password": 1})
+    if not doc:
+        raise HTTPException(status_code=401, detail="Invalid credentials.")
 
-    # Authenticate user
-    is_authenticated = await authenticate_user(user_name, password)
-    if not is_authenticated:
-        raise HTTPException(status_code = 401,
-                            detail = "Invalid credentials !!! \n Plz Sign in First OR Check the Credentials.")
+    loop = asyncio.get_event_loop()
+    match = await loop.run_in_executor(
+        None, partial(bcrypt.verify, password, doc["password"])
+    )
+    if not match:
+        raise HTTPException(status_code=401, detail="Invalid credentials.")
 
-    return {"login_status": "Successful",
-            "user_name": user_name}
+    return create_token_pair(user_name)
+
+
+@app.post("/refresh", response_model=TokenPair)
+async def refresh_tokens(refresh_token: str = Form(...)):
+    """Exchange a valid refresh token for a new access + refresh token pair."""
+    user_name = verify_refresh_token(refresh_token)
+    return create_token_pair(user_name)
+
+
+# Protected endpoints  (JWT required via Depends(get_current_user))
+@app.post("/logout")
+async def logout(current_user: str = Depends(get_current_user)):
+    """Evict the user's model runner from the in-process cache on logout."""
+    evict_runner(current_user)
+    return {"detail": "Logged out."}
 
 
 @app.get("/{user_name}/all_sessions")
-async def list_sessions(user_name: str):
-    """
-    Give a list of all the chat sessions created by the user.
-    :param user_name: The name of the user.
-    :return: The list of session_ids and their respective chat names.
-    """
-    try:
-        # First check if user exists
-        user = await collection.find_one({"user_name": user_name})
-        if not user:
-            raise HTTPException(status_code = 404, detail = "User not found.")
+async def list_sessions(
+    user_name: str,
+    current_user: str = Depends(get_current_user),
+):
+    assert_owns_resource(current_user, user_name)
 
-        # Get sessions data
-        sessions = await collection.find_one(
-            {"user_name": user_name},
-            {"_id": 0, "session_ids": 1, "chat_names": 1, "encryption_key": 1}
-        )
+    doc, cipher = await _get_cipher(user_name)
+    chat_names = []
+    for enc_name in doc.get("chat_names", []):
+        try:
+            chat_names.append(cipher.decrypt(enc_name).decode("utf-8"))
+        except Exception:
+            chat_names.append("Untitled Chat")
 
-        if not sessions:
-            return {"session_ids": [], "chat_names": []}
-
-        # Decrypting chat names
-        key = sessions.get("encryption_key")
-        if not key:
-            return {"session_ids": sessions.get("session_ids", []), "chat_names": []}
-
-        cipher = Fernet(key)
-        chat_names = []
-
-        for encrypted_name in sessions.get("chat_names", []):
-            try:
-                if encrypted_name:
-                    decrypted = cipher.decrypt(encrypted_name)
-                    chat_names.append(decrypted.decode('utf-8'))
-                else:
-                    chat_names.append("Untitled Chat")
-            except Exception:
-                chat_names.append("Untitled Chat")
-
-        return {
-            "session_ids": sessions.get("session_ids", []),
-            "chat_names": chat_names
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code = 500, detail = str(e))
+    return {
+        "session_ids": doc.get("session_ids", []),
+        "chat_names": chat_names,
+    }
 
 
 @app.post("/{user_name}/new_session")
-async def new_session(user_name: str):
-    """
-    Creates a new session id for the user to start a new conversation.
-    :param user_name: The unique user_name of the user.
-    :return: The new session id.
-    """
-    result = await collection.find_one({"user_name": user_name})
-    if not result:
-        raise HTTPException(status_code=404, detail="User not found.")
+async def new_session(
+    user_name: str,
+    current_user: str = Depends(get_current_user),
+):
+    assert_owns_resource(current_user, user_name)
+    await _get_user_or_404(user_name)
 
-    # Generate unique session ID
-    max_attempts = 10
-    for _ in range(max_attempts):
-        session_id = str(uuid.uuid4())
-        # Checking if this session_id already exists for this user
-        existing = await collection.find_one(
-            {"user_name": user_name, "session_ids": session_id}
-        )
-        if not existing:
-            return {"session_id": session_id}
+    for _ in range(10):
+        sid = str(uuid.uuid4())
+        clash = await collection.find_one({"user_name": user_name, "session_ids": sid})
+        if not clash:
+            return {"session_id": sid}
 
-    raise HTTPException(status_code = 500, detail = "Failed to generate unique session ID")
+    raise HTTPException(status_code=500, detail="Could not generate unique session ID.")
 
 
 @app.post("/{user_name}/{session_id}/chat")
-async def chat(session_id: str, user_name: str, user_prompt: str = Form(...)):
+async def chat(
+    user_name: str,
+    session_id: str,
+    user_prompt: str = Form(...),
+    current_user: str = Depends(get_current_user),
+):
     """
-    API endpoint which enables user to interact with the llm.
-    :param user_prompt: The query of the user.
-    :param session_id: The chat the user want to ask the query in.
-    :param user_name: The name of the user.
-    :return: The response given by the llm.
+    SSE streaming chat endpoint.
+    Tokens are yielded as `data: <token>\\n\\n` events.
+    The final event is `data: [DONE]\\n\\n`.
+    The frontend should use EventSource or fetch with a ReadableStream.
     """
-    try:
-        # Validating user exists and getting encryption key
-        doc = await collection.find_one({"user_name": user_name})
-        if not doc:
-            raise HTTPException(status_code = 404, detail = "User not found.")
+    assert_owns_resource(current_user, user_name)
 
-        key = doc.get("encryption_key")
-        if not key:
-            raise HTTPException(status_code = 500, detail = "Encryption key not found.")
+    # Rate limit: 30 messages per minute per user
+    allowed = await check_rate_limit(user_name, max_requests=30, window_seconds=60)
+    if not allowed:
+        raise HTTPException(status_code=429, detail="Too many requests. Slow down a bit.")
 
-        cipher = Fernet(key)
+    doc, cipher = await _get_cipher(user_name)
+    session_ids: list = doc.get("session_ids", [])
+    is_new_session = session_id not in session_ids
 
-        # Check if this is a new session
-        session_ids = doc.get("session_ids", [])
-        is_new_session = session_id not in session_ids
+    loop = asyncio.get_event_loop()
 
-        if is_new_session:
-            # Create chat name for new session
-            chat_name = create_chat_name(user_prompt=user_prompt)
-            encrypted_chat_name = cipher.encrypt(chat_name.encode('utf-8'))
-
-            # Initialize new session with empty chat array
+    if is_new_session:
+        # Generate chat name without blocking the event loop
+        chat_name = await loop.run_in_executor(
+            None, partial(_create_chat_name_sync, user_prompt)
+        )
+        enc_name = cipher.encrypt(chat_name.encode("utf-8"))
+        await collection.update_one(
+            {"user_name": user_name},
+            {"$push": {"session_ids": session_id, "chat_names": enc_name, "chats": []}},
+        )
+    else:
+        # Ensure chats array is correctly sized (guard against schema drift)
+        session_idx = session_ids.index(session_id)
+        chats = doc.get("chats", [])
+        while len(chats) <= session_idx:
             await collection.update_one(
-                {"user_name": user_name},
-                {
-                    "$push": {
-                        "session_ids": session_id,
-                        "chat_names": encrypted_chat_name,
-                        "chats": []  # Initialize empty array for this session's messages
-                    }
-                }
+                {"user_name": user_name}, {"$push": {"chats": []}}
             )
-        else:
-            # Ensure chats array has correct length
-            session_index = session_ids.index(session_id)
-            chats = doc.get("chats", [])
+            chats.append([])
 
-            # If chats array is shorter than session_ids, pad it with empty arrays
-            while len(chats) <= session_index:
+    runner = await _get_runner(user_name)
+
+    async def event_generator() -> AsyncIterator[str]:
+        full_parts: list[str] = []
+        try:
+            async for token in runner.astream(user_prompt, session_id, user_name):
+                full_parts.append(token)
+                # Escape newlines inside the SSE data field
+                safe_token = token.replace("\n", "\\n")
+                yield f"data: {safe_token}\n\n"
+
+            yield "data: [DONE]\n\n"
+
+        except Exception as e:
+            yield f"data: [ERROR] {str(e)}\n\n"
+            return
+
+        # Persist message to MongoDB after streaming completes
+        full_response = "".join(full_parts)
+        if full_response:
+            enc_user = cipher.encrypt(user_prompt.encode("utf-8"))
+            enc_ai = cipher.encrypt(full_response.encode("utf-8"))
+            msg_obj = {
+                "user_message": enc_user,
+                "ai_message": enc_ai,
+                "timestamp": datetime.now(UTC),
+            }
+            # Re-fetch to get accurate session index after any concurrent updates
+            updated = await collection.find_one({"user_name": user_name})
+            curr_ids = updated.get("session_ids", [])
+            if session_id in curr_ids:
+                idx = curr_ids.index(session_id)
                 await collection.update_one(
                     {"user_name": user_name},
-                    {"$push": {"chats": []}}
+                    {"$push": {f"chats.{idx}": msg_obj}},
                 )
 
-        # Get model runner and generate response
-        model_runner = get_model_runner(user_name)
-        response = model_runner.run(
-            user_prompt = user_prompt,
-            session_id = session_id,
-            user_name = user_name
-        )
-
-        # Encrypt messages
-        encrypted_user_message = cipher.encrypt(user_prompt.encode('utf-8'))
-        encrypted_ai_message = cipher.encrypt(response.encode('utf-8'))
-
-        # Create message object
-        message_obj = {
-            "user_message": encrypted_user_message,
-            "ai_message": encrypted_ai_message,
-            "timestamp": datetime.now(UTC)
-        }
-
-        # Find session index and update the specific chat array
-        updated_doc = await collection.find_one({"user_name": user_name})
-        current_session_ids = updated_doc.get("session_ids", [])
-
-        if session_id in current_session_ids:
-            session_index = current_session_ids.index(session_id)
-
-            # Update the specific chat array for this session
-            await collection.update_one(
-                {"user_name": user_name},
-                {"$push": {f"chats.{session_index}": message_obj}}
-            )
-
-        return {"response": response}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",   # Disable Nginx buffering if behind a proxy
+        },
+    )
 
 
 @app.delete("/delete_chat/{user_name}/{session_id}")
-async def delete_chat(user_name: str, session_id: str):
-    """
-    Delete a specific chat session for a user.
-    :param user_name: Name of the user
-    :param session_id: Session ID to delete
-    :return: Success message
-    """
-    # Finding the index of the session to delete
-    user_doc = await collection.find_one({"user_name": user_name})
-    if not user_doc:
-        raise HTTPException(status_code=404, detail="User not found")
+async def delete_chat(
+    user_name: str,
+    session_id: str,
+    current_user: str = Depends(get_current_user),
+):
+    assert_owns_resource(current_user, user_name)
+    doc = await _get_user_or_404(user_name)
 
-    session_ids = user_doc.get("session_ids", [])
+    session_ids: list = doc.get("session_ids", [])
     if session_id not in session_ids:
-        raise HTTPException(status_code=404, detail="Session ID not found")
+        raise HTTPException(status_code=404, detail="Session not found.")
 
-    try:
-        removed_idx = session_ids.index(session_id)
+    idx = session_ids.index(session_id)
+    chat_names = doc.get("chat_names", [])
+    chats = doc.get("chats", [])
 
-        # Get current arrays
-        chat_names = user_doc.get("chat_names", [])
-        chats = user_doc.get("chats", [])
+    new_session_ids = session_ids[:idx] + session_ids[idx + 1:]
+    new_chat_names = chat_names[:idx] + chat_names[idx + 1:] if idx < len(chat_names) else chat_names
+    new_chats = chats[:idx] + chats[idx + 1:] if idx < len(chats) else chats
 
-        # Remove elements at the specific index
-        new_session_ids = session_ids[:removed_idx] + session_ids[removed_idx + 1:]
-        new_chat_names = chat_names[:removed_idx] + chat_names[removed_idx + 1:] if removed_idx < len(
-            chat_names) else chat_names
-        new_chats = chats[:removed_idx] + chats[removed_idx + 1:] if removed_idx < len(chats) else chats
-
-        # Update with new arrays (atomic operation)
-        await collection.update_one(
-            {"user_name": user_name},
-            {
-                "$set": {
-                    "session_ids": new_session_ids,
-                    "chat_names": new_chat_names,
-                    "chats": new_chats
-                }
-            }
-        )
-
-        return {"status": "success", "message": "Chat deleted successfully"}
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete chat: {str(e)}")
+    await collection.update_one(
+        {"user_name": user_name},
+        {"$set": {"session_ids": new_session_ids, "chat_names": new_chat_names, "chats": new_chats}},
+    )
+    return {"detail": "Chat deleted."}
 
 
 @app.get("/{user_name}/{session_id}/messages")
-async def get_messages(user_name: str, session_id: str, limit: Optional[int] = 50):
-    """
-    Get messages for a specific session with pagination.
-    :param user_name: Name of the user
-    :param session_id: Session ID
-    :param limit: Maximum number of messages to return
-    :return: List of decrypted messages
-    """
-    try:
-        user_doc = await collection.find_one({"user_name": user_name})
-        if not user_doc:
-            raise HTTPException(status_code=404, detail="User not found")
+async def get_messages(
+    user_name: str,
+    session_id: str,
+    limit: Optional[int] = 50,
+    current_user: str = Depends(get_current_user),
+):
+    assert_owns_resource(current_user, user_name)
 
-        session_ids = user_doc.get("session_ids", [])
-        if session_id not in session_ids:
-            raise HTTPException(status_code=404, detail="Session not found")
+    doc, cipher = await _get_cipher(user_name)
+    session_ids: list = doc.get("session_ids", [])
+    if session_id not in session_ids:
+        raise HTTPException(status_code=404, detail="Session not found.")
 
-        session_index = session_ids.index(session_id)
-        chats = user_doc.get("chats", [])
+    idx = session_ids.index(session_id)
+    chats = doc.get("chats", [])
+    if idx >= len(chats):
+        return {"messages": []}
 
-        if session_index >= len(chats):
-            return {"messages": []}
+    messages = []
+    for msg in (chats[idx] or [])[-limit:]:
+        try:
+            messages.append({
+                "user_message": cipher.decrypt(msg["user_message"]).decode("utf-8"),
+                "ai_message": cipher.decrypt(msg["ai_message"]).decode("utf-8"),
+                "timestamp": msg.get("timestamp", ""),
+            })
+        except Exception:
+            continue
 
-        # Get messages for this session
-        session_messages = chats[session_index] if chats[session_index] else []
-
-        # Decrypt messages
-        key = user_doc.get("encryption_key")
-        if not key:
-            return {"messages": []}
-
-        cipher = Fernet(key)
-        decrypted_messages = []
-
-        # Get last 'limit' messages
-        for msg in session_messages[-limit:]:
-            try:
-                decrypted_msg = {
-                    "user_message": cipher.decrypt(msg["user_message"]).decode('utf-8'),
-                    "ai_message": cipher.decrypt(msg["ai_message"]).decode('utf-8'),
-                    "timestamp": msg.get("timestamp", "")
-                }
-                decrypted_messages.append(decrypted_msg)
-            except Exception:
-                continue
-
-        return {"messages": decrypted_messages}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return {"messages": messages}
 
 
+
+# Voice endpoint
 @app.post("/{user_name}/{session_id}/chat/voice")
-async def voice_chat(session_id: str, user_name: str, file: UploadFile = File(...)):
-    """
-    FastAPI endpoint for streaming TTS audio.
-    """
-    # Save uploaded file temporarily
-    temp_path = f"temp_{file.filename}"
-    with open(temp_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+async def voice_chat(
+    user_name: str,
+    session_id: str,
+    file: UploadFile = File(...),
+    current_user: str = Depends(get_current_user),
+):
+    assert_owns_resource(current_user, user_name)
 
-    from backend.main.voice_bridge import MindHavenVoice
-    voice_service = MindHavenVoice()
+    allowed = await check_rate_limit(user_name, max_requests=10, window_seconds=60)
+    if not allowed:
+        raise HTTPException(status_code=429, detail="Voice rate limit exceeded.")
 
-    user_prompt = voice_service.speech_to_text(audio_file = temp_path)
+    # Use uuid-based temp path to prevent collisions under concurrent requests
+    ext = os.path.splitext(file.filename or "audio")[1] or ".tmp"
+    temp_path = f"/tmp/mh_voice_{uuid.uuid4()}{ext}"
 
     try:
-        # Validating user exists and getting encryption key
-        doc = await collection.find_one({"user_name": user_name})
-        if not doc:
-            raise HTTPException(status_code = 404, detail = "User not found.")
+        with open(temp_path, "wb") as buf:
+            shutil.copyfileobj(file.file, buf)
 
-        key = doc.get("encryption_key")
-        if not key:
-            raise HTTPException(status_code = 500, detail = "Encryption key not found.")
+        from voice_bridge import MindHavenVoice
+        voice = MindHavenVoice()
 
-        cipher = Fernet(key)
+        loop = asyncio.get_event_loop()
+        user_prompt = await loop.run_in_executor(
+            None, partial(voice.speech_to_text, audio_file=temp_path)
+        )
 
-        # Check if this is a new session
-        session_ids = doc.get("session_ids", [])
+        doc, cipher = await _get_cipher(user_name)
+        session_ids: list = doc.get("session_ids", [])
         is_new_session = session_id not in session_ids
 
         if is_new_session:
-            # Create chat name for new session
-            chat_name = create_chat_name(user_prompt=user_prompt)
-            encrypted_chat_name = cipher.encrypt(chat_name.encode('utf-8'))
-
-            # Initialize new session with empty chat array
+            chat_name = await loop.run_in_executor(
+                None, partial(_create_chat_name_sync, user_prompt)
+            )
+            enc_name = cipher.encrypt(chat_name.encode("utf-8"))
             await collection.update_one(
                 {"user_name": user_name},
-                {
-                    "$push": {
-                        "session_ids": session_id,
-                        "chat_names": encrypted_chat_name,
-                        "chats": []  # Initialize empty array for this session's messages
-                    }
-                }
+                {"$push": {"session_ids": session_id, "chat_names": enc_name, "chats": []}},
             )
-        else:
-            # Ensure chats array has correct length
-            session_index = session_ids.index(session_id)
-            chats = doc.get("chats", [])
 
-            # If chats array is shorter than session_ids, pad it with empty arrays
-            while len(chats) <= session_index:
+        runner = await _get_runner(user_name)
+        response = await runner.arun(user_prompt, session_id, user_name)
+
+        # Stream TTS audio back
+        audio_stream = voice.gtts_stream(text=response)
+
+        # Persist to MongoDB (fire-and-forget)
+        async def _persist():
+            enc_user = cipher.encrypt(user_prompt.encode("utf-8"))
+            enc_ai = cipher.encrypt(response.encode("utf-8"))
+            updated = await collection.find_one({"user_name": user_name})
+            curr_ids = updated.get("session_ids", [])
+            if session_id in curr_ids:
+                idx = curr_ids.index(session_id)
                 await collection.update_one(
                     {"user_name": user_name},
-                    {"$push": {"chats": []}}
+                    {"$push": {f"chats.{idx}": {
+                        "user_message": enc_user,
+                        "ai_message": enc_ai,
+                        "timestamp": datetime.now(UTC),
+                    }}},
                 )
 
-        # Get model runner and generate response
-        model_runner = get_model_runner(user_name)
-        response = model_runner.run(
-            user_prompt = user_prompt,
-            session_id = session_id,
-            user_name = user_name
-        )
-
-        audio_stream = voice_service.gtts_stream(
-            text = response
-        )
-
-        # Encrypt messages
-        encrypted_user_message = cipher.encrypt(user_prompt.encode('utf-8'))
-        encrypted_ai_message = cipher.encrypt(response.encode('utf-8'))
-
-        # Create message object
-        message_obj = {
-            "user_message": encrypted_user_message,
-            "ai_message": encrypted_ai_message,
-            "timestamp": datetime.now(UTC)
-        }
-
-        # Find session index and update the specific chat array
-        updated_doc = await collection.find_one({"user_name": user_name})
-        current_session_ids = updated_doc.get("session_ids", [])
-
-        if session_id in current_session_ids:
-            session_index = current_session_ids.index(session_id)
-
-            # Update the specific chat array for this session
-            await collection.update_one(
-                {"user_name": user_name},
-                {"$push": {f"chats.{session_index}": message_obj}}
-            )
+        asyncio.create_task(_persist())
 
         return StreamingResponse(
             audio_stream,
-            media_type = "audio/mpeg",
-            headers = {
-                "Content-Disposition": "inline; filename=speech.mp3",
-                "Cache-Control": "no-cache"
-            }
+            media_type="audio/mpeg",
+            headers={
+                "Content-Disposition": "inline; filename=reply.mp3",
+                "Cache-Control": "no-cache",
+            },
         )
 
-    except ValueError as e:
-        return {"error": str(e)}, 400
-    except Exception as e:
-        return {"error": f"TTS generation failed: {str(e)}"}, 500
-
     finally:
-
         try:
             os.remove(temp_path)
         except Exception:
@@ -578,4 +500,4 @@ async def voice_chat(session_id: str, user_name: str, file: UploadFile = File(..
 
 
 if __name__ == "__main__":
-    uvicorn.run(app = app, port = 8001)
+    uvicorn.run(app=app, host="0.0.0.0", port=8001, reload=False)

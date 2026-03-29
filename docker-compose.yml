@@ -1,0 +1,76 @@
+version: "3.9"
+
+# MindHaven — docker-compose
+#
+# Services:
+#   redis   — session cache, JWT blacklist, rate-limit counters
+#   backend — FastAPI application
+#
+# Usage:
+#   docker compose up --build           # first time
+#   docker compose up -d                # detached (background)
+#   docker compose down                 # stop
+#   docker compose logs -f backend      # tail backend logs
+
+
+services:
+
+  redis:
+    image: redis:7-alpine
+    container_name: mindhaven_redis
+    restart: unless-stopped
+    command: >
+      redis-server
+        --save 60 1
+        --loglevel warning
+        --maxmemory 128mb
+        --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Redis is intentionally NOT exposed on the host — only reachable
+    # by the backend service via the internal Docker network.
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: mindhaven_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Override REDIS_URL to use the Docker service name as the hostname
+      REDIS_URL: redis://redis:6379/0
+      # Tune these via .env if needed
+      ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+      REFRESH_TOKEN_EXPIRE_DAYS: "7"
+      MODEL_RUNNER_CACHE_SIZE: "64"
+      MODEL_RUNNER_TTL_SECONDS: "1800"
+      WHISPER_MODEL: "small"
+    ports:
+      - "8001:8001"
+    volumes:
+      # Persist per-user ChromaDB conversation memory across restarts
+      - chroma_memory:/app/chroma
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+# Named volumes
+volumes:
+  redis_data:
+    driver: local
+  chroma_memory:
+    driver: local

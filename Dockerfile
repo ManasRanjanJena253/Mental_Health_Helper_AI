@@ -1,29 +1,54 @@
-# Use Python 3.12 for compatibility with Torch, Whisper, etc.
-FROM python:3.12.11
 
-# Set working directory inside the container
+# Builds wheels in a throw-away layer so the final image stays lean.
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+
+# System deps needed to compile some Python packages (e.g. bcrypt, cryptography)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        libffi-dev \
+        ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --upgrade pip \
+ && pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
+
+ \
+    runtime image
+FROM python:3.11-slim AS runtime
+
+# ffmpeg is required by Whisper for audio decoding
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-# Install system dependencies (for Whisper, audio, etc.)
-RUN apt-get update && apt-get install -y \
-    git-lfs \
-    ffmpeg \
-    build-essential \
- && rm -rf /var/lib/apt/lists/*
+# Install pre-built wheels from stage 1 (no compilation in runtime stage)
+COPY --from=builder /wheels /wheels
+RUN pip install --no-cache-dir --no-index --find-links=/wheels /wheels/*
 
-# Enable Git LFS if needed
-RUN git lfs install
+# Copy application source
+COPY backend/main/ /app/
 
-# Copy entire project into container (keeps backend folder)
-COPY . .
+# Copy ChromaDB vector store directories (pre-built from index_pdf runs)
+# If these are large, consider mounting them as a volume instead.
+COPY Mental_Health_Remedies/         /app/Mental_Health_Remedies/
+COPY Mental_Health_Taboos_in_India/  /app/Mental_Health_Taboos_in_India/
 
-# Install Python dependencies
-RUN pip install --upgrade pip setuptools wheel
-RUN pip install langchain-chroma
-RUN pip install --no-cache-dir -r backend/requirements.txt
+# Per-user conversation memory — always mount as a named volume so data
+# persists across container restarts (see docker-compose.yml)
+RUN mkdir -p /app/chroma
 
-# Expose port for Render
-EXPOSE 10000
+# Non-root user for security
+RUN adduser --disabled-password --gecos "" appuser \
+ && chown -R appuser:appuser /app
+USER appuser
 
-# Start FastAPI app
-CMD ["uvicorn", "backend.main.apis:app", "--host", "0.0.0.0", "--port", "10000"]
+EXPOSE 8001
+
+# Use multiple uvicorn workers for concurrency.
+# Adjust --workers based on available CPU cores (2×cores + 1 is a common rule).
+CMD ["uvicorn", "apis:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "2"]
