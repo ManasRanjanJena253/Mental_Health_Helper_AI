@@ -11,9 +11,15 @@ version: "3.9"
 #   docker compose up -d                # detached (background)
 #   docker compose down                 # stop
 #   docker compose logs -f backend      # tail backend logs
-
+#
+# .env file must exist at project root with at minimum:
+#   MONGO_URI=mongodb+srv://...
+#   GOOGLE_API_KEY=...
+#   JWT_SECRET_KEY=<output of: openssl rand -hex 32>
+#   ELEVENLABS_API_KEY=...   (optional)
 
 services:
+
 
   redis:
     image: redis:7-alpine
@@ -47,6 +53,8 @@ services:
     environment:
       # Override REDIS_URL to use the Docker service name as the hostname
       REDIS_URL: redis://redis:6379/0
+      # Chroma memory path — points to the named volume mount
+      CHROMA_MEMORY_PATH: /app/chroma
       # Tune these via .env if needed
       ACCESS_TOKEN_EXPIRE_MINUTES: "60"
       REFRESH_TOKEN_EXPIRE_DAYS: "7"
@@ -67,6 +75,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
 
 # Named volumes
 volumes:
