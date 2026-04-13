@@ -91,7 +91,7 @@ class RunModel:
         self,
         db_name: str,
         api_key: str = None,
-        model_name: str = "gemini-2.5-flash",
+        model_name: str = "gemma-3-4b-it",
         temperature: float = 0.5,
     ):
         self.__api_key = api_key or os.getenv("GOOGLE_API_KEY")

@@ -1,1 +1,4 @@
 .env
+.idea
+eval_report.md
+eval_results.json
